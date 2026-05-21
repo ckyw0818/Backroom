@@ -1,0 +1,11 @@
+# 파이썬 가상환경 제외 (.conda 폴더 전체 무시)
+.conda/
+venv/
+ENV/
+
+# VS Code 설정 제외
+.vscode/
+
+# 파이썬 실행 시 생성되는 캐시 파일 제외
+__pycache__/
+*.pyc
