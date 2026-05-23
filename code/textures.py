@@ -12,7 +12,8 @@ BASEBOARD_RGB = (177, 171, 55)
 FLOOR_RGB = (116, 105, 35)
 CEIL_RGB = (104, 99, 27)
 DARK_COLOR = color.Color(0, 0, 0, 1)
-ASSET_DIR = Path(__file__).resolve().parent.parent
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+TEXTURE_DIR = PROJECT_DIR / 'asset' / 'texture'
 
 
 def make_noise(path, base, amp=18, force=False):
@@ -57,11 +58,13 @@ def load_image_texture(path):
 
 
 def load_environment_textures():
-    wall_path = ASSET_DIR / 'wall.png'
-    floor_path = ASSET_DIR / 'floor.png'
-    ceil_path = ASSET_DIR / 'ceil.png'
-    baseboard_path = ASSET_DIR / 'baseboard.png'
-    noise_path = ASSET_DIR / 'noise.png'
+    wall_path = TEXTURE_DIR / 'wall.png'
+    floor_path = TEXTURE_DIR / 'floor.png'
+    ceil_path = TEXTURE_DIR / 'ceil.png'
+    baseboard_path = TEXTURE_DIR / 'baseboard.png'
+    noise_path = TEXTURE_DIR / 'noise.png'
+    outdoor_path = TEXTURE_DIR / 'outdoor.png'
+    indoor_path = TEXTURE_DIR / 'indoor.png'
 
     make_noise(wall_path, WALL_RGB, 22)
     make_noise(floor_path, FLOOR_RGB, 18)
@@ -75,4 +78,6 @@ def load_environment_textures():
         'ceil': load_image_texture(ceil_path),
         'baseboard': load_image_texture(baseboard_path),
         'noise': load_image_texture(noise_path),
+        'outdoor': load_image_texture(outdoor_path),
+        'indoor': load_image_texture(indoor_path),
     }

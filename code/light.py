@@ -3,7 +3,14 @@ from ursina import Entity, color
 
 LIGHT_COLOR = color.Color(1.0, 0.96, 0.55, 1)
 LIGHT_RADIUS = 6.8
-LIGHT_POWER = 7.2
+LIGHT_POWER = 1
+LIGHT_PANEL_SAMPLES = (
+    (0.0, 0.0),
+    (-0.62, 0.0),
+    (0.62, 0.0),
+    (0.0, -0.22),
+    (0.0, 0.22),
+)
 
 
 def rgba(r, g, b, a):
@@ -78,6 +85,12 @@ class LightSystem:
 
         return self.layout[r][c]
 
+    def cell_at_world(self, x, z):
+        return (
+            int((z + self.cell / 2) // self.cell),
+            int((x + self.cell / 2) // self.cell),
+        )
+
     def blocked_by_wall(self, light_x, light_z, x, z):
         k = (
             int(light_x * 1024),
@@ -95,6 +108,10 @@ class LightSystem:
         dist2 = dx * dx + dz * dz
 
         if dist2 < 0.01:
+            self._block_cache[k] = False
+            return False
+
+        if self.cell_at_world(light_x, light_z) == self.cell_at_world(x, z):
             self._block_cache[k] = False
             return False
 
@@ -119,12 +136,13 @@ class LightSystem:
         self._block_cache[k] = False
         return False
 
-    def light_at(self, x, y, z, near_lights):
+    def light_at(self, x, y, z, near_lights, surface='wall'):
         k = (
             int(x * 1024),
             int(y * 1024),
             int(z * 1024),
             id(near_lights),
+            surface,
         )
 
         v = self._light_cache.get(k)
@@ -137,24 +155,47 @@ class LightSystem:
         power = self.power
         wall_height = self.wall_height
         blocked_by_wall = self.blocked_by_wall
+        samples = LIGHT_PANEL_SAMPLES if surface in ('floor', 'ceil') else ((0.0, 0.0),)
+
+        if surface == 'floor':
+            falloff_exp = 1.75
+            surface_boost = 1.45
+            vertical_bias = 0.55
+        elif surface == 'ceil':
+            falloff_exp = 1.55
+            surface_boost = 0.72
+            vertical_bias = 0.10
+        elif surface == 'baseboard':
+            falloff_exp = 2.15
+            surface_boost = 1.12
+            vertical_bias = 0.25
+        else:
+            falloff_exp = 2.35
+            surface_boost = 1.0
+            vertical_bias = 0.25
 
         for lx, ly, lz in near_lights:
-            dx = x - lx
-            dy = y - ly
-            dz = z - lz
-            dist2 = dx * dx + dy * dy + dz * dz
+            sample_power = power / len(samples)
 
-            if dist2 >= radius2:
-                continue
+            for off_x, off_z in samples:
+                sx = lx + off_x
+                sz = lz + off_z
+                dx = x - sx
+                dy = (y - ly) * vertical_bias
+                dz = z - sz
+                dist2 = dx * dx + dy * dy + dz * dz
 
-            if blocked_by_wall(lx, lz, x, z):
-                continue
+                if dist2 >= radius2:
+                    continue
 
-            dist = dist2 ** 0.5
-            falloff = 1.0 - dist / radius
+                if blocked_by_wall(sx, sz, x, z):
+                    continue
 
-            ceiling_boost = 1.45 if y > wall_height * 0.78 else 1.0
-            total += (falloff ** 2.55) * power * ceiling_boost
+                dist = dist2 ** 0.5
+                falloff = 1.0 - dist / radius
+
+                ceiling_edge_soften = 0.88 if y > wall_height * 0.90 else 1.0
+                total += (falloff ** falloff_exp) * sample_power * surface_boost * ceiling_edge_soften
 
         self._light_cache[k] = total
         return total
@@ -200,28 +241,12 @@ class LightSystem:
         x = c * self.cell
         z = r * self.cell
 
-        panel = Entity(
+        tube = Entity(
             model='cube',
-            color=LIGHT_COLOR,
+            color=rgba(255, 255, 245, 255),
             unlit=True,
-            position=(x, self.wall_height - 0.025, z),
-            scale=(1.55, 0.035, 0.58),
+            position=(x, self.wall_height - 0.035, z),
+            scale=(1.55, 0.025, 0.36),
         )
 
-        glow = Entity(
-            model='cube',
-            color=rgba(255, 242, 92, 58),
-            unlit=True,
-            position=(x, self.wall_height - 0.045, z),
-            scale=(2.55, 0.018, 1.12),
-        )
-
-        core = Entity(
-            model='cube',
-            color=rgba(255, 255, 230, 255),
-            unlit=True,
-            position=(x, self.wall_height - 0.055, z),
-            scale=(1.18, 0.012, 0.34),
-        )
-
-        return [panel, glow, core]
+        return [tube]
