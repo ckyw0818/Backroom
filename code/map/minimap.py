@@ -10,10 +10,10 @@ MINIMAP_ENABLED = False
 MINIMAP_SIZE = 0.3
 MINIMAP_POSITION = (0.0, 0.0)
 
-MINIMAP_WORLD_RANGE = 50
+MINIMAP_WORLD_RANGE = 70
 MINIMAP_INNER = 0.88
 
-SCAN_RADIUS_CELLS = 10
+SCAN_RADIUS_CELLS = 14
 SCAN_PULSE_TIME = 0.8
 MONSTER_PULSE_TIME = 0.65
 
@@ -634,6 +634,19 @@ class Minimap:
 
         dot.position = (x, y, -0.06)
         pulse.position = (x, y, -0.07)
+
+    def reset_monster_fixes(self):
+        self.has_monster_fixes = [False for _ in self.monsters]
+        self.monster_fix_positions = [(0.0, 0.0) for _ in self.monsters]
+        self.pending_monster_pulse_dists = [None for _ in self.monsters]
+        self.pending_monster_warn_indices = [None for _ in self.monsters]
+        self.monster_pulse_ts = [MONSTER_PULSE_TIME for _ in self.monsters]
+
+        for dot in self.monster_dots:
+            dot.enabled = False
+
+        for pulse in self.monster_pulses:
+            pulse.enabled = False
 
     def update_player_marker(self):
         forward = self.player.forward

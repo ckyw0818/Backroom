@@ -5,6 +5,7 @@ from pathlib import Path
 
 from ursina import Audio, Entity, Vec3, color, time
 from map.map_data import CELL
+from character.player_controller import RUN_SPEED   
 
 
 MONSTER_STATES = ('idle', 'wander', 'investigate', 'alert', 'chase')
@@ -27,8 +28,10 @@ MONSTER_DECEL = 7.5
 MONSTER_TURN_SPEED = 8.0
 MONSTER_WAYPOINT_REACH_DIST = 0.22
 DIRECT_CHASE_SPEED_MULT = 1.18
-MONSTER_WANDER_SPEED = 2.4
-MONSTER_INVESTIGATE_SPEED = 3.25
+
+MONSTER_WANDER_SPEED = RUN_SPEED * 0.4
+MONSTER_INVESTIGATE_SPEED = RUN_SPEED * 0.7
+
 MONSTER_COLLISION_RADIUS = 0.48
 
 class MonsterAI:
@@ -71,6 +74,7 @@ class MonsterAI:
         self.sounds = self.load_sounds(project_dir)
 
         spawn = spawn_cell or self.pick_spawn_cell()
+        self.spawn_cell = spawn
         x, z = self.cell_center(spawn)
 
         self.entity = Entity(
@@ -83,6 +87,19 @@ class MonsterAI:
             double_sided=True,
         )
 
+        self.set_state('idle')
+
+    def reset_to_spawn(self):
+        self.stop_chase_sound()
+        x, z = self.cell_center(self.spawn_cell)
+        self.entity.position = (x, 1.05, z)
+        self.velocity_x = 0.0
+        self.velocity_z = 0.0
+        self.path = []
+        self.path_timer = 0.0
+        self.target_cell = None
+        self.investigate_cell = None
+        self.jumpscare_seen_this_chase = False
         self.set_state('idle')
 
     def load_sounds(self, project_dir):

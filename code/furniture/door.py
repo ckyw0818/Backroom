@@ -141,6 +141,31 @@ class DoorMixin(BedMixin, DrawerMixin):
 
         return self.door_lock_states.get(key, False)
 
+    def reset_start_room_lock_and_key(self):
+        key = self._first_lockable_door_key
+
+        if key is not None:
+            self.door_states[key] = False
+            self.door_lock_states[key] = True
+
+            door = self.active_doors.get(key)
+            if door:
+                door['locked'] = True
+                door['open'] = 0.0
+                door['target'] = 0.0
+                door['rattle_timer'] = 0.0
+                door['unlock_open_timer'] = 0.0
+                door['pending_open'] = False
+
+                for node, base_h in door['moving_nodes']:
+                    node.setH(base_h)
+
+                collider = door.get('wall_collider')
+                if collider:
+                    self.set_door_wall_collision(collider, True)
+
+        self.reset_key_pickup()
+
     def exit_sign_rotation_for_face(self, face):
         return (DOOR_FACE_ROTATIONS[face]) % 360
 

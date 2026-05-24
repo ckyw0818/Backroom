@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash('C:\\\\Users\\\\ckyw\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python312\\\\python.exe' -c ' *)",
+      "Bash(findstr /V \"^$\\\\|Warning\\\\|AL lib\\\\|ALSA\\\\|XkbGetKeyboard\\\\|panda\\\\|Cg \\\\|:util\\\\|:display\\\\|:device\\\\|:audio\\\\|:glgsg\\\\|:gobj\\\\|:chan\\\\|:collide\\\\|:pgui\\\\|Cg:\")"
+    ]
+  }
+}

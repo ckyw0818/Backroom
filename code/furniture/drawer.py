@@ -465,6 +465,28 @@ class DrawerMixin:
 
         return True
 
+    def reset_key_pickup(self):
+        self.has_key = False
+
+        if self.held_key_entity:
+            self.held_key_entity.enabled = False
+
+        for key, drawer in self.active_drawers.items():
+            if key[1] == KEY_ROOM_CELL[0] and key[2] == KEY_ROOM_CELL[1]:
+                self.drawer_states[key] = False
+                drawer['open'] = 0.0
+                drawer['target'] = 0.0
+                base_pos = drawer['base_pos']
+                drawer['node'].setPos(base_pos.x, base_pos.y, base_pos.z)
+
+            key_data = drawer.get('key')
+
+            if not key_data:
+                continue
+
+            key_data['node'].show()
+            key_data['glow'].hide()
+
     def show_held_key(self):
         if self.held_key_entity:
             self.held_key_entity.enabled = True

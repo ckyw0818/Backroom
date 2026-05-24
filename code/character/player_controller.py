@@ -13,9 +13,10 @@ MOVE_ACCEL = 5.5
 MOVE_DECEL = 8.0
 
 
-def create_player(cell_size, spawn_r=1, spawn_c=1):
+def create_player(cell_size, spawn_r=1, spawn_c=1, spawn_yaw=0):
     player = FirstPersonController(
         position=(spawn_c * cell_size, 0, spawn_r * cell_size),
+        rotation_y=spawn_yaw,
         speed=0,
         mouse_sensitivity=Vec2(35, 35),
     )

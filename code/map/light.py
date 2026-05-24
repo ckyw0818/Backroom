@@ -246,7 +246,7 @@ class LightSystem:
             color=rgba(255, 255, 245, 255),
             unlit=True,
             position=(x, self.wall_height - 0.035, z),
-            scale=(1.55, 0.025, 0.36),
+            scale=(0.78, 0.025, 0.78),
         )
 
         return [tube]

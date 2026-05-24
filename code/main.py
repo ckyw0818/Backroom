@@ -1,3 +1,5 @@
+import random
+
 from ursina import *
 try:
     from ursina.shaders import lit_with_shadows_shader
@@ -40,6 +42,14 @@ JUMPSCARE_MIN_DISTANCE = 1.0
 JUMPSCARE_MAX_DISTANCE = 14.0
 JUMPSCARE_MIN_VOLUME = 0.65
 JUMPSCARE_MAX_VOLUME = 3.0
+DEATH_DISTANCE = CELL * 0.2
+DEATH_BLACK_TIME = 3.5
+RESPAWN_FADE_TIME = 1.0
+RESPAWN_YAW = -90
+VENT_VOLUME = 0.60
+MONSTER_SPAWN_COUNT = 4
+MONSTER_SPAWN_MIN_DISTANCE = 28
+MONSTER_SPAWN_MIN_SEPARATION = 8
 
 
 def rgba(r, g, b, a):
@@ -173,6 +183,152 @@ def jumpscare_volume_for(monster):
     return JUMPSCARE_MIN_VOLUME + (JUMPSCARE_MAX_VOLUME - JUMPSCARE_MIN_VOLUME) * close
 
 
+def set_death_overlay_alpha(alpha):
+    alpha = max(0.0, min(1.0, alpha))
+    death_overlay.enabled = alpha > 0.0
+    death_overlay.color = rgba(0, 0, 0, int(255 * alpha))
+
+
+def reset_player_to_start():
+    player.position = (START_ROOM_CELL[1] * CELL, 0, START_ROOM_CELL[0] * CELL)
+    player.rotation_y = RESPAWN_YAW
+    player.speed = 0
+    player.camera_pivot.x = 0
+    player.camera_pivot.y = head_bob.base_pivot_y
+    camera.rotation = (0, 0, 0)
+    head_bob.current_speed = 0.0
+    head_bob.run_blend = 0.0
+    head_bob.jitter_x = 0.0
+    head_bob.jitter_y = 0.0
+
+
+def reset_run_after_death():
+    global jumpscare_timer, jumpscare_monster, heartbeat_rate, minimap_visible
+
+    jumpscare_timer = 0.0
+    jumpscare_monster = None
+    jumpscare_sound.stop()
+    vent_ambience.volume = 0.0
+    vent_ambience.stop()
+    vent_ambience.play()
+    heartbeat_rate = HEARTBEAT_IDLE_RATE
+    heartbeat_sound.volume = HEARTBEAT_IDLE_VOLUME
+    set_audio_rate(heartbeat_sound, heartbeat_rate)
+
+    reset_player_to_start()
+    map_renderer.reset_start_room_lock_and_key()
+
+    for monster in monsters:
+        monster.reset_to_spawn()
+
+    minimap.reset_monster_fixes()
+    minimap_visible = False
+    minimap.set_enabled(False)
+    map_renderer.update_rendered_scene(force=True)
+
+
+def start_death_sequence():
+    global death_state, death_timer
+
+    if death_state != 'alive':
+        return
+
+    death_state = 'black'
+    death_timer = DEATH_BLACK_TIME
+    player.speed = 0
+    vent_ambience.stop()
+    set_death_overlay_alpha(1.0)
+
+
+def fade_monster_sounds(amount):
+    volume = max(0.0, min(1.0, amount))
+
+    jumpscare_sound.volume = JUMPSCARE_MAX_VOLUME * volume
+
+    for monster in monsters:
+        for sound in monster.sounds.values():
+            if sound:
+                sound.volume = volume
+
+
+def update_death_sequence():
+    global death_state, death_timer
+
+    if death_state == 'alive':
+        return False
+
+    player.speed = 0
+    death_timer -= time.dt
+
+    if death_state == 'black':
+        set_death_overlay_alpha(1.0)
+        fade_monster_sounds(death_timer / DEATH_BLACK_TIME)
+
+        if death_timer <= 0.0:
+            reset_run_after_death()
+            death_state = 'fade_in'
+            death_timer = RESPAWN_FADE_TIME
+        return True
+
+    if death_state == 'fade_in':
+        alpha = max(0.0, death_timer / RESPAWN_FADE_TIME)
+        set_death_overlay_alpha(alpha)
+        vent_ambience.volume = VENT_VOLUME * (1.0 - alpha)
+
+        if death_timer <= 0.0:
+            death_state = 'alive'
+            death_timer = 0.0
+            vent_ambience.volume = VENT_VOLUME
+            set_death_overlay_alpha(0.0)
+        return True
+
+    return False
+
+
+def update_player_caught():
+    for monster in monsters:
+        if monster.distance_to_player() <= DEATH_DISTANCE:
+            start_death_sequence()
+            return
+
+
+def cell_open_neighbor_count(cell):
+    r, c = cell
+    return sum(
+        1
+        for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1))
+        if 0 <= r + dr < len(LAYOUT)
+        and 0 <= c + dc < len(LAYOUT[0])
+        and LAYOUT[r + dr][c + dc] == 0
+    )
+
+
+def cell_grid_distance(a, b):
+    return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+
+def pick_monster_spawn_cells(count):
+    candidates = [
+        (r, c)
+        for r, row in enumerate(LAYOUT)
+        for c, value in enumerate(row)
+        if value == 0
+        and cell_open_neighbor_count((r, c)) >= 3
+        and cell_grid_distance((r, c), START_ROOM_CELL) >= MONSTER_SPAWN_MIN_DISTANCE
+    ]
+    random.shuffle(candidates)
+
+    picked = []
+    for cell in candidates:
+        if all(cell_grid_distance(cell, other) >= MONSTER_SPAWN_MIN_SEPARATION for other in picked):
+            picked.append(cell)
+
+            if len(picked) >= count:
+                return picked
+
+    return picked + candidates[:max(0, count - len(picked))]
+
+
 class DoorCrosshair:
     def __init__(self):
         self.outer = Entity(
@@ -231,19 +387,20 @@ scene.fog_density = 0
 
 textures = load_environment_textures()
 light_system = LightSystem(LAYOUT, CELL, WALL_H)
-player = create_player(CELL, *START_ROOM_CELL)
+player = create_player(CELL, *START_ROOM_CELL, spawn_yaw=-90)
 footstep_sounds = [
     Audio(f'asset/sound/foot{i}.wav', autoplay=False, volume=0.60)
     for i in range(1, 4)
 ]
 head_bob = HeadBob(player, footstep_sounds, lambda: emit_noise(NOISE_FOOTSTEP_STRENGTH))
 map_renderer = MapRenderer(player, light_system, textures)
-monster_specs = [
-    ('asset/texture/obunga.png', (25, 25)),
-    ('asset/texture/obunga2.png', (21, 25)),
-    ('asset/texture/obunga3.png', (7, 23)),
-    ('asset/texture/obunga4.png', (27, 23)),
+monster_textures = [
+    'asset/texture/obunga.png',
+    'asset/texture/obunga2.png',
+    'asset/texture/obunga3.png',
+    'asset/texture/obunga4.png',
 ]
+monster_specs = list(zip(monster_textures, pick_monster_spawn_cells(MONSTER_SPAWN_COUNT)))
 monsters = [
     MonsterAI(
         player,
@@ -268,6 +425,17 @@ minimap = Minimap(
     enabled=MINIMAP_ENABLED,
 )
 crosshair = DoorCrosshair()
+death_overlay = Entity(
+    parent=camera.ui,
+    model='quad',
+    color=rgba(0, 0, 0, 0),
+    position=(0, 0, -0.95),
+    scale=(2.2, 2.2),
+    enabled=False,
+)
+death_overlay.always_on_top = True
+death_state = 'alive'
+death_timer = 0.0
 
 _amb = Panda3dAmbientLight('ambient')
 _amb.setColor((0.0, 0.0, 0.0, 1.0))
@@ -280,7 +448,7 @@ Text(
     scale=0.65,
     color=rgba(210, 195, 95, 110),
 )
-vent_ambience = Audio('asset/sound/vent.wav', loop=True, autoplay=True, volume=0.60)
+vent_ambience = Audio('asset/sound/vent.wav', loop=True, autoplay=True, volume=VENT_VOLUME)
 sonar_sound = Audio('asset/sound/sonar.wav', autoplay=False, volume=0.78)
 heartbeat_sound = Audio('asset/sound/heartbeat.wav', loop=True, autoplay=True, volume=HEARTBEAT_IDLE_VOLUME)
 jumpscare_sound = Audio('asset/sound/jumpscare.wav', autoplay=False, volume=2.5)
@@ -299,6 +467,9 @@ map_renderer.initial_render()
 def update():
     global heartbeat_rate, minimap_scan_was_down, minimap_tab_was_down, minimap_visible
 
+    if update_death_sequence():
+        return
+
     map_renderer.update_rendered_scene()
     map_renderer.process_queues()
     map_renderer.update_doors()
@@ -306,6 +477,10 @@ def update():
 
     for monster in monsters:
         monster.update()
+
+    update_player_caught()
+    if death_state != 'alive':
+        return
 
     update_jumpscares()
 
