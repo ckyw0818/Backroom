@@ -10,23 +10,24 @@ MINIMAP_ENABLED = False
 MINIMAP_SIZE = 0.3
 MINIMAP_POSITION = (0.0, 0.0)
 
-MINIMAP_WORLD_RANGE = 20
+MINIMAP_WORLD_RANGE = 50
 MINIMAP_INNER = 0.88
 
-SCAN_RADIUS_CELLS = 4
+SCAN_RADIUS_CELLS = 10
 SCAN_PULSE_TIME = 0.8
 MONSTER_PULSE_TIME = 0.65
 
 PLAYER_TRI_W = 0.017
 PLAYER_TRI_H = 0.022
 MONSTER_DOT_SCALE = 0.016
+WARN_PITCH_STEP = 0.5
 GLITCH_SCANLINES = 9
 STATIC_NOISE_SIZE = 96
 STATIC_NOISE_FRAMES = 10
-STATIC_NOISE_FPS = 18.0
+STATIC_NOISE_FPS = 10.0
 GLITCH_START_CELLS = SCAN_RADIUS_CELLS + 0.8
 GLITCH_MAX_CELLS = 1.15
-GLITCH_SMOOTHING = 7.0
+GLITCH_SMOOTHING = 4.5
 
 FLOOR_ALPHA = 155
 ROOM_ALPHA = 130
@@ -107,7 +108,16 @@ void main() {
 
 
 class Minimap:
-    def __init__(self, layout, cell_size, player, monster, cell_door_rooms=None, enabled=MINIMAP_ENABLED):
+    def __init__(
+        self,
+        layout,
+        cell_size,
+        player,
+        monster,
+        cell_door_rooms=None,
+        highlighted_room_cells=None,
+        enabled=MINIMAP_ENABLED,
+    ):
         self.layout = layout
         self.cell = cell_size
         self.player = player
@@ -120,6 +130,7 @@ class Minimap:
         self._door_room_set = frozenset(
             dr for drs in self.cell_door_rooms.values() for dr in drs
         )
+        self.highlighted_room_cells = frozenset(highlighted_room_cells or ())
         self.tiles = []
         self.room_tiles = []
         self.door_indicators = []
@@ -136,12 +147,19 @@ class Minimap:
         self.scan_wave = 0.0
         self.scan_max = 0.0
         self.pending_monster_pulse_dists = [None for _ in self.monsters]
+        self.pending_monster_warn_indices = [None for _ in self.monsters]
 
         self.has_monster_fixes = [False for _ in self.monsters]
         self.monster_fix_positions = [(0.0, 0.0) for _ in self.monsters]
         self.monster_pulse_ts = [MONSTER_PULSE_TIME for _ in self.monsters]
         self.glitch_amount = 0.0
-        self.warn_sound = Audio('asset/sound/warn.wav', autoplay=False, volume=0.78)
+        self.warn_sounds = [
+            Audio('asset/sound/warn.wav', autoplay=False, volume=0.78)
+            for _ in self.monsters
+        ]
+        for i, sound in enumerate(self.warn_sounds):
+            self.set_audio_pitch(sound, 1.0 + WARN_PITCH_STEP * i)
+        self.warn_sound = self.warn_sounds[0] if self.warn_sounds else None
 
         self.root = Entity(
             parent=camera.ui,
@@ -329,8 +347,8 @@ class Minimap:
             return 0.0, 0.0
 
         t = time.time() * (15.0 + amount * 34.0)
-        x = sin(t + seed * 12.989) * MINIMAP_SIZE * 0.030 * amount
-        y = sin(t * 1.37 + seed * 78.233) * MINIMAP_SIZE * 0.018 * amount
+        x = sin(t + seed * 12.989) * MINIMAP_SIZE * 0.014 * amount
+        y = sin(t * 1.37 + seed * 78.233) * MINIMAP_SIZE * 0.009 * amount
         return x, y
 
     def tile_color(self):
@@ -345,6 +363,17 @@ class Minimap:
         shade = 0.32 + 0.68 * edge_amount
         alpha = int(ROOM_ALPHA * edge_amount)
         return rgba(int(90 * shade), int(80 * shade), int(50 * shade), alpha)
+
+    def shaded_highlighted_room_color(self, edge_amount):
+        shade = 0.36 + 0.64 * edge_amount
+        alpha = int(180 * edge_amount)
+        return rgba(int(58 * shade), int(135 * shade), int(190 * shade), alpha)
+
+    def door_indicator_color(self, highlighted):
+        if highlighted:
+            return rgba(82, 165, 225, 170)
+
+        return rgba(210, 188, 62, 145)
 
     def create_tiles(self):
         r = self.ui_radius()
@@ -368,7 +397,8 @@ class Minimap:
                     ind_scale = (s * 0.68, s * 0.22)
                 else:
                     ind_scale = (s * 0.22, s * 0.68)
-                self.door_indicator_specs.append((fr, fc, ind_wx, ind_wz, ind_scale))
+                highlighted = (rr, rc) in self.highlighted_room_cells
+                self.door_indicator_specs.append((fr, fc, ind_wx, ind_wz, ind_scale, highlighted))
 
     def set_enabled(self, enabled):
         self.enabled = enabled
@@ -380,6 +410,33 @@ class Minimap:
             int((self.player.x + self.cell / 2) // self.cell),
         )
 
+    def set_audio_pitch(self, sound, pitch):
+        for attr in ('pitch', 'play_rate', 'rate'):
+            if hasattr(sound, attr):
+                try:
+                    setattr(sound, attr, pitch)
+                    return
+                except Exception:
+                    pass
+
+        for attr in ('sound', '_sound', 'audio', '_audio'):
+            inner = getattr(sound, attr, None)
+
+            if inner and hasattr(inner, 'setPlayRate'):
+                try:
+                    inner.setPlayRate(pitch)
+                    return
+                except Exception:
+                    pass
+
+    def play_warn_sound(self, index):
+        if index is None or index < 0 or index >= len(self.warn_sounds):
+            return
+
+        sound = self.warn_sounds[index]
+        sound.stop()
+        sound.play()
+
     def scan(self):
         pr, pc = self.player_cell()
 
@@ -388,6 +445,7 @@ class Minimap:
         self.scan_max = SCAN_RADIUS_CELLS
         self.scanning = True
         self.pending_monster_pulse_dists = [None for _ in self.monsters]
+        self.pending_monster_warn_indices = [None for _ in self.monsters]
 
         self.scan_pulse.enabled = True
         self.scan_pulse.scale = 0.001
@@ -395,22 +453,20 @@ class Minimap:
 
         scan_x = pc * self.cell
         scan_z = pr * self.cell
-        warn_triggered = False
+        observed_monster_count = 0
         for i, monster in enumerate(self.monsters):
             monster_dx = monster.entity.x - scan_x
             monster_dz = monster.entity.z - scan_z
             monster_dist_cells = sqrt(monster_dx * monster_dx + monster_dz * monster_dz) / self.cell
 
             if monster_dist_cells <= SCAN_RADIUS_CELLS:
-                warn_triggered = True
+                warn_index = observed_monster_count
+                observed_monster_count += 1
                 self.has_monster_fixes[i] = True
                 self.monster_fix_positions[i] = (monster.entity.x, monster.entity.z)
                 self.pending_monster_pulse_dists[i] = monster_dist_cells
+                self.pending_monster_warn_indices[i] = warn_index
                 self.update_monster_dot(i)
-
-        if warn_triggered:
-            self.warn_sound.stop()
-            self.warn_sound.play()
 
     def update_scan_wave(self):
         if not self.scanning:
@@ -442,7 +498,9 @@ class Minimap:
             if pulse_dist is not None and pulse_dist <= self.scan_wave:
                 self.monster_pulse_ts[i] = 0.0
                 self.monster_pulses[i].enabled = True
+                self.play_warn_sound(self.pending_monster_warn_indices[i])
                 self.pending_monster_pulse_dists[i] = None
+                self.pending_monster_warn_indices[i] = None
 
         k = min(1.0, self.scan_wave / max(0.001, self.scan_max))
         self.scan_pulse.scale = self.map_diameter() * k
@@ -523,9 +581,14 @@ class Minimap:
             edge_amount = min(1.0, max(0.0, (rr - d) / max(0.001, rr * EDGE_FADE)))
             if edge_amount <= 0:
                 continue
-            add_rect(x, y, tile_size * 0.72, tile_size * 0.72, self.shaded_room_color(edge_amount))
+            room_color = (
+                self.shaded_highlighted_room_color(edge_amount)
+                if (r, c) in self.highlighted_room_cells
+                else self.shaded_room_color(edge_amount)
+            )
+            add_rect(x, y, tile_size * 0.72, tile_size * 0.72, room_color)
 
-        for floor_r, floor_c, ind_wx, ind_wz, ind_scale in self.door_indicator_specs:
+        for floor_r, floor_c, ind_wx, ind_wz, ind_scale, highlighted in self.door_indicator_specs:
             if (floor_r, floor_c) not in self.revealed_cells:
                 continue
 
@@ -535,7 +598,7 @@ class Minimap:
             if d > rr + max(ind_scale):
                 continue
 
-            add_rect(x, y, ind_scale[0], ind_scale[1], rgba(210, 188, 62, 145))
+            add_rect(x, y, ind_scale[0], ind_scale[1], self.door_indicator_color(highlighted))
 
         self.map_layer.model = Mesh(
             vertices=vertices,
@@ -651,7 +714,7 @@ class Minimap:
             self.static_noise.texture = self.static_noise_textures[frame]
             self.static_noise_frame = frame
 
-        self.static_noise.color = rgba(255, 255, 255, int(75 + amount * 180))
+        self.static_noise.color = rgba(255, 255, 255, int(28 + amount * 82))
 
     def update_glitch(self):
         target = self.target_glitch_amount()

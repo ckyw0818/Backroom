@@ -41,9 +41,10 @@ def player_cell(player, cell_size):
 
 
 class HeadBob:
-    def __init__(self, player, footstep_sounds=None):
+    def __init__(self, player, footstep_sounds=None, footstep_callback=None):
         self.player = player
         self.footstep_sounds = footstep_sounds or []
+        self.footstep_callback = footstep_callback
         self.base_pivot_y = player.camera_pivot.y
         self.t = random.uniform(0, 10)
         self.last_step_index = self.step_index(self.t)
@@ -66,6 +67,9 @@ class HeadBob:
         sound = random.choice(self.footstep_sounds)
         sound.volume = 0.40 + self.run_blend * 0.12
         sound.play()
+
+        if self.footstep_callback:
+            self.footstep_callback()
 
     def update(self):
         moving = held_keys['w'] or held_keys['a'] or held_keys['s'] or held_keys['d']

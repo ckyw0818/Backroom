@@ -12,7 +12,7 @@ BASEBOARD_RGB = (177, 171, 55)
 FLOOR_RGB = (116, 105, 35)
 CEIL_RGB = (104, 99, 27)
 DARK_COLOR = color.Color(0, 0, 0, 1)
-PROJECT_DIR = Path(__file__).resolve().parent.parent
+PROJECT_DIR = Path(__file__).resolve().parents[2]
 TEXTURE_DIR = PROJECT_DIR / 'asset' / 'texture'
 
 
@@ -21,6 +21,7 @@ def make_noise(path, base, amp=18, force=False):
     if path.exists() and not force:
         return
 
+    path.parent.mkdir(parents=True, exist_ok=True)
     img = Image.new('RGB', (256, 256), base)
     px = img.load()
 

@@ -3,7 +3,7 @@ from ursina import Entity, color
 
 LIGHT_COLOR = color.Color(1.0, 0.96, 0.55, 1)
 LIGHT_RADIUS = 6.8
-LIGHT_POWER = 1
+LIGHT_POWER = 2.0
 LIGHT_PANEL_SAMPLES = (
     (0.0, 0.0),
     (-0.62, 0.0),
@@ -32,7 +32,7 @@ class LightSystem:
             (r, c)
             for r in range(self.rows)
             for c in range(self.cols)
-            if layout[r][c] == 0 and (r + c) % 2 == 0
+            if layout[r][c] == 0 and (r + c) % 1 == 0
         ]
 
         self.cell_set = set(self.cells)

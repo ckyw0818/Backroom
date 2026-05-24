@@ -1,24 +1,35 @@
+import math
 import random
 from collections import deque
 from pathlib import Path
 
 from ursina import Audio, Entity, Vec3, color, time
+from map.map_data import CELL
 
 
-MONSTER_STATES = ('idle', 'wander', 'investigate', 'alert', 'chase', 'lost')
+MONSTER_STATES = ('idle', 'wander', 'investigate', 'alert', 'chase')
 STATE_SOUND_FILES = {
     'idle': 'monster_idle.wav',
     'wander': 'monster_wander.wav',
     'alert': 'monster_alert.wav',
     'chase': 'monster_chasing.wav',
-    'lost': 'monster_lost.wav',
 }
 
 CHASE_SOUND_MIN_DISTANCE = 2.0
-CHASE_SOUND_MAX_DISTANCE = 18.0
-CHASE_SOUND_MIN_VOLUME = 0.2
+CHASE_DETECT_DISTANCE = CELL * 8
+CHASE_SOUND_MAX_DISTANCE = CELL * 6
+CHASE_SOUND_MIN_VOLUME = 0.00
 CHASE_SOUND_MAX_VOLUME = 1.0
-CHASE_LOST_TIME = 8.0
+NOISE_ATTRACT_RADIUS_CELLS = 26.0
+MONSTER_ACCEL = 7.0
+MONSTER_DIRECT_CHASE_ACCEL = 13.0
+MONSTER_DECEL = 7.5
+MONSTER_TURN_SPEED = 8.0
+MONSTER_WAYPOINT_REACH_DIST = 0.22
+DIRECT_CHASE_SPEED_MULT = 1.18
+MONSTER_WANDER_SPEED = 2.4
+MONSTER_INVESTIGATE_SPEED = 3.25
+MONSTER_COLLISION_RADIUS = 0.48
 
 class MonsterAI:
     def __init__(
@@ -49,11 +60,13 @@ class MonsterAI:
         self.path_timer = 0.0
         self.target_cell = None
         self.investigate_cell = None
-        self.last_seen_cell = None
-        self.lost_timer = 0.0
         self.chase_sound_active = False
+        self.jumpscare_seen_this_chase = False
         self.texture = texture
         self.chase_speed = chase_speed
+        self.velocity_x = 0.0
+        self.velocity_z = 0.0
+        self.facing_yaw = 0.0
 
         self.sounds = self.load_sounds(project_dir)
 
@@ -66,7 +79,7 @@ class MonsterAI:
             color=color.white,
             unlit=True,
             position=(x, 1.05, z),
-            scale=(2.35, 2.15, 1.0),
+            scale=(2.85, 2.60, 1.0),
             double_sided=True,
         )
 
@@ -105,6 +118,7 @@ class MonsterAI:
         sound = self.sounds.get(state)
 
         if state == 'chase':
+            self.jumpscare_seen_this_chase = False
             self.start_chase_sound()
         elif sound:
             sound.stop()
@@ -181,8 +195,49 @@ class MonsterAI:
     def player_cell(self):
         return self.cell_from_world(self.player.x, self.player.z)
 
+    def reachable_player_cell(self):
+        cell = self.player_cell()
+        if cell in self.walkable:
+            return cell
+
+        r, c = cell
+        best = None
+        best_dist = None
+
+        for dr, dc in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+            neighbor = (r + dr, c + dc)
+            if neighbor not in self.walkable:
+                continue
+
+            x, z = self.cell_center(neighbor)
+            dx = self.player.x - x
+            dz = self.player.z - z
+            dist = dx * dx + dz * dz
+
+            if best is None or dist < best_dist:
+                best = neighbor
+                best_dist = dist
+
+        return best or cell
+
     def monster_cell(self):
         return self.cell_from_world(self.entity.x, self.entity.z)
+
+    def can_occupy(self, x, z):
+        radius = MONSTER_COLLISION_RADIUS
+        min_c = int((x - radius + self.cell / 2) // self.cell)
+        max_c = int((x + radius + self.cell / 2) // self.cell)
+        min_r = int((z - radius + self.cell / 2) // self.cell)
+        max_r = int((z + radius + self.cell / 2) // self.cell)
+
+        for r in range(min_r, max_r + 1):
+            for c in range(min_c, max_c + 1):
+                if r < 0 or r >= self.rows or c < 0 or c >= self.cols:
+                    return False
+                if self.layout[r][c] == 1:
+                    return False
+
+        return True
 
     def pick_spawn_cell(self):
         player_cell = self.player_cell()
@@ -277,22 +332,74 @@ class MonsterAI:
 
     def move_along_path(self, speed):
         if not self.path:
+            self.apply_movement(0.0, 0.0, 0.0)
             return
 
         tx, tz = self.cell_center(self.path[0])
         dx = tx - self.entity.x
         dz = tz - self.entity.z
         dist = max((dx * dx + dz * dz) ** 0.5, 0.001)
-        step = min(dist, speed * time.dt)
+        dir_x = dx / dist
+        dir_z = dz / dist
 
-        self.entity.x += dx / dist * step
-        self.entity.z += dz / dist * step
+        self.apply_movement(dir_x, dir_z, speed)
 
-        if dist < 0.08:
+        if dist < MONSTER_WAYPOINT_REACH_DIST:
             self.path.pop(0)
 
-    def face_player(self):
-        self.entity.look_at(Vec3(self.player.x, self.entity.y, self.player.z))
+    def move_towards_player_direct(self):
+        dx = self.player.x - self.entity.x
+        dz = self.player.z - self.entity.z
+        dist = max((dx * dx + dz * dz) ** 0.5, 0.001)
+        self.apply_movement(
+            dx / dist,
+            dz / dist,
+            self.chase_speed * DIRECT_CHASE_SPEED_MULT,
+            accel_override=MONSTER_DIRECT_CHASE_ACCEL,
+        )
+
+    def apply_movement(self, dir_x, dir_z, speed, accel_override=None):
+        dt = time.dt
+        target_vx = dir_x * speed
+        target_vz = dir_z * speed
+        current_speed = (self.velocity_x * self.velocity_x + self.velocity_z * self.velocity_z) ** 0.5
+        target_speed = (target_vx * target_vx + target_vz * target_vz) ** 0.5
+        if target_speed > current_speed:
+            accel = accel_override if accel_override is not None else MONSTER_ACCEL
+        else:
+            accel = MONSTER_DECEL
+        k = min(1.0, dt * accel)
+
+        self.velocity_x += (target_vx - self.velocity_x) * k
+        self.velocity_z += (target_vz - self.velocity_z) * k
+
+        next_x = self.entity.x + self.velocity_x * dt
+        if self.can_occupy(next_x, self.entity.z):
+            self.entity.x = next_x
+        else:
+            self.velocity_x = 0.0
+
+        next_z = self.entity.z + self.velocity_z * dt
+        if self.can_occupy(self.entity.x, next_z):
+            self.entity.z = next_z
+        else:
+            self.velocity_z = 0.0
+
+        self.face_player_smooth()
+
+    def turn_towards(self, dir_x, dir_z):
+        target_yaw = math.degrees(math.atan2(dir_x, dir_z))
+        diff = (target_yaw - self.facing_yaw + 180.0) % 360.0 - 180.0
+        self.facing_yaw += diff * min(1.0, time.dt * MONSTER_TURN_SPEED)
+        self.entity.rotation_y = self.facing_yaw
+
+    def face_player_smooth(self):
+        dx = self.player.x - self.entity.x
+        dz = self.player.z - self.entity.z
+        if dx * dx + dz * dz < 0.0001:
+            return
+
+        self.turn_towards(dx, dz)
 
     def update_path(self, goal_cell, interval):
         self.path_timer -= time.dt
@@ -303,8 +410,16 @@ class MonsterAI:
         self.path_timer = interval
         self.path = self.find_path(self.monster_cell(), goal_cell)
 
-    def investigate_noise(self, cell):
+    def investigate_noise(self, cell, strength=1.0):
         if cell not in self.walkable:
+            return
+
+        strength = max(0.0, min(1.0, strength))
+        if strength <= 0.0:
+            return
+
+        max_dist = NOISE_ATTRACT_RADIUS_CELLS * strength
+        if self.grid_distance(self.monster_cell(), cell) > max_dist:
             return
 
         self.investigate_cell = cell
@@ -319,14 +434,11 @@ class MonsterAI:
         self.state_time += time.dt
 
         sees_player = (
-            self.distance_to_player() < 16
+            self.distance_to_player() < CHASE_DETECT_DISTANCE
             and self.has_line_of_sight_to_player()
         )
 
         if sees_player:
-            self.last_seen_cell = self.player_cell()
-            self.lost_timer = 0.0
-
             if self.state not in ('alert', 'chase'):
                 self.set_state('alert')
 
@@ -339,14 +451,14 @@ class MonsterAI:
                 self.target_cell = self.pick_wander_target()
                 self.path = self.find_path(self.monster_cell(), self.target_cell)
 
-            self.move_along_path(1.05)
+            self.move_along_path(MONSTER_WANDER_SPEED)
 
         elif self.state == 'investigate':
             if not self.investigate_cell:
                 self.set_state('wander')
             else:
                 self.update_path(self.investigate_cell, 0.75)
-                self.move_along_path(1.35)
+                self.move_along_path(MONSTER_INVESTIGATE_SPEED)
 
                 if self.monster_cell() == self.investigate_cell:
                     self.investigate_cell = None
@@ -359,22 +471,15 @@ class MonsterAI:
 
         elif self.state == 'chase':
             if sees_player:
-                self.update_path(self.player_cell(), 0.25)
-                self.move_along_path(self.chase_speed)
-            else:
-                self.lost_timer += time.dt
-
-                if self.last_seen_cell:
-                    self.update_path(self.last_seen_cell, 0.35)
-                    self.move_along_path(self.chase_speed * 0.7)
-
-                if self.lost_timer > CHASE_LOST_TIME:
-                    self.set_state('lost')
-
-        elif self.state == 'lost':
-            if self.state_time > 1.2:
                 self.path = []
-                self.set_state('wander')
+                self.path_timer = 0.0
+                self.move_towards_player_direct()
+            else:
+                self.update_path(self.reachable_player_cell(), 0.25)
+                self.move_along_path(self.chase_speed)
 
-        self.face_player()
+        if self.state in ('idle', 'alert') or (self.state != 'chase' and not self.path):
+            self.apply_movement(0.0, 0.0, 0.0)
+        else:
+            self.face_player_smooth()
         self.update_chase_sound()

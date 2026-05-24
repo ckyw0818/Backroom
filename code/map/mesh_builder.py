@@ -1,6 +1,6 @@
 from ursina import Entity, Mesh
 
-from map_data import (
+from map.map_data import (
     BASEBOARD_H,
     BASEBOARD_OUT,
     BASEBOARD_TEX_SCALE,
@@ -11,7 +11,7 @@ from map_data import (
     WALL_H,
     WALL_TEX_SCALE,
 )
-from textures import BASEBOARD_RGB, CEIL_RGB, FLOOR_RGB, WALL_RGB
+from utill.textures import BASEBOARD_RGB, CEIL_RGB, FLOOR_RGB, WALL_RGB
 
 
 class MeshBuilderMixin:
