@@ -8,8 +8,9 @@ from pathlib import Path
 
 from panda3d.core import AmbientLight as Panda3dAmbientLight
 
-from game_map import CELL, LAYOUT, WALL_H, MapRenderer
+from game_map import MapRenderer
 from light import LightSystem
+from map_data import CELL, LAYOUT, WALL_H
 from minimap import MINIMAP_ENABLED, Minimap
 from monster import MonsterAI
 from player_controller import CAMERA_FOV, RUN_SPEED, HeadBob, create_player
@@ -26,6 +27,9 @@ HEARTBEAT_CHASE_MAX_RATE = 2.3
 HEARTBEAT_MIN_DISTANCE = 2.0
 HEARTBEAT_MAX_DISTANCE = 16.0
 HEARTBEAT_SMOOTHING = 4.5
+CROSSHAIR_SIZE = 0.010
+CROSSHAIR_DOOR_SIZE = 0.017
+CROSSHAIR_SMOOTHING = 14.0
 
 
 def rgba(r, g, b, a):
@@ -71,6 +75,41 @@ def heartbeat_targets(monster):
     volume = HEARTBEAT_CHASE_MIN_VOLUME + (HEARTBEAT_CHASE_MAX_VOLUME - HEARTBEAT_CHASE_MIN_VOLUME) * close
     rate = HEARTBEAT_CHASE_MIN_RATE + (HEARTBEAT_CHASE_MAX_RATE - HEARTBEAT_CHASE_MIN_RATE) * close
     return volume, rate
+
+
+class DoorCrosshair:
+    def __init__(self):
+        self.outer = Entity(
+            parent=camera.ui,
+            model='circle',
+            color=rgba(245, 235, 190, 115),
+            position=(0, 0, -0.70),
+            scale=CROSSHAIR_SIZE,
+        )
+        self.inner = Entity(
+            parent=camera.ui,
+            model='circle',
+            color=rgba(8, 8, 6, 82),
+            position=(0, 0, -0.71),
+            scale=CROSSHAIR_SIZE * 0.52,
+        )
+
+    def set_visible(self, visible):
+        self.outer.enabled = visible
+        self.inner.enabled = visible
+
+    def update(self, door_ready, hidden):
+        self.set_visible(not hidden)
+
+        if hidden:
+            return
+
+        target = CROSSHAIR_DOOR_SIZE if door_ready else CROSSHAIR_SIZE
+        k = min(1.0, time.dt * CROSSHAIR_SMOOTHING)
+        scale = self.outer.scale_x + (target - self.outer.scale_x) * k
+        self.outer.scale = scale
+        self.inner.scale = scale * 0.52
+        self.outer.color = rgba(255, 236, 165, 175 if door_ready else 115)
 
 
 app = Ursina(title='The Backrooms', size=(1280, 720))
@@ -120,7 +159,10 @@ monsters = [
     )
     for texture, spawn_cell in monster_specs
 ]
+post_effects = PostEffects()
+
 minimap = Minimap(LAYOUT, CELL, player, monsters, map_renderer._cell_door_rooms, enabled=MINIMAP_ENABLED)
+crosshair = DoorCrosshair()
 
 _amb = Panda3dAmbientLight('ambient')
 _amb.setColor((0.0, 0.0, 0.0, 1.0))
@@ -133,8 +175,6 @@ Text(
     scale=0.65,
     color=rgba(210, 195, 95, 110),
 )
-
-post_effects = PostEffects()
 vent_ambience = Audio('asset/sound/vent.wav', loop=True, autoplay=True, volume=0.80)
 sonar_sound = Audio('asset/sound/sonar.wav', autoplay=False, volume=0.78)
 heartbeat_sound = Audio('asset/sound/heartbeat.wav', loop=True, autoplay=True, volume=HEARTBEAT_IDLE_VOLUME)
@@ -154,6 +194,7 @@ def update():
     map_renderer.update_rendered_scene()
     map_renderer.process_queues()
     map_renderer.update_doors()
+    map_renderer.update_drawers()
 
     for monster in monsters:
         monster.update()
@@ -173,6 +214,7 @@ def update():
     minimap_tab_was_down = minimap_tab_down
 
     minimap.update()
+    crosshair.update(map_renderer.can_interact(), minimap_visible)
     active_monster = min(monsters, key=lambda monster: monster.distance_to_player())
     target_heartbeat_volume, target_heartbeat_rate = heartbeat_targets(active_monster)
     heartbeat_lerp = min(1.0, time.dt * HEARTBEAT_SMOOTHING)
@@ -205,7 +247,7 @@ def update():
 
 def input(key):
     if key == 'e':
-        map_renderer.toggle_nearest_door()
+        map_renderer.interact_nearest()
 
 
 app.run()

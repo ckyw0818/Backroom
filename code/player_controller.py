@@ -64,7 +64,7 @@ class HeadBob:
             return
 
         sound = random.choice(self.footstep_sounds)
-        sound.volume = 0.60 + self.run_blend * 0.20
+        sound.volume = 0.40 + self.run_blend * 0.12
         sound.play()
 
     def update(self):

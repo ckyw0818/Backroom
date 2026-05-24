@@ -1,12 +1,14 @@
-from math import atan2, degrees, sqrt
+import random
+from math import atan2, degrees, sin, sqrt
 
-from ursina import Entity, Mesh, camera, color, time
+from panda3d.core import PNMImage, Texture as PandaTexture
+from ursina import Audio, Entity, Mesh, Shader, Texture, Vec2, camera, color, time
 
 
 MINIMAP_ENABLED = False
 
 MINIMAP_SIZE = 0.3
-MINIMAP_POSITION = (0.60, 0.27)
+MINIMAP_POSITION = (0.0, 0.0)
 
 MINIMAP_WORLD_RANGE = 20
 MINIMAP_INNER = 0.88
@@ -18,15 +20,90 @@ MONSTER_PULSE_TIME = 0.65
 PLAYER_TRI_W = 0.017
 PLAYER_TRI_H = 0.022
 MONSTER_DOT_SCALE = 0.016
+GLITCH_SCANLINES = 9
+STATIC_NOISE_SIZE = 96
+STATIC_NOISE_FRAMES = 10
+STATIC_NOISE_FPS = 18.0
+GLITCH_START_CELLS = SCAN_RADIUS_CELLS + 0.8
+GLITCH_MAX_CELLS = 1.15
+GLITCH_SMOOTHING = 7.0
 
-FLOOR_ALPHA = 235
-ROOM_ALPHA = 210
+FLOOR_ALPHA = 155
+ROOM_ALPHA = 130
 FLOOR_SCALE = 0.52
-EDGE_FADE = 0.28
+EDGE_FADE = 0.20
 
 
 def rgba(r, g, b, a):
     return color.Color(r / 255, g / 255, b / 255, a / 255)
+
+
+MINIMAP_VIGNETTE_SHADER = Shader(
+    name='minimap_vignette_shader',
+    language=Shader.GLSL,
+    vertex='''
+#version 130
+uniform mat4 p3d_ModelViewProjectionMatrix;
+in vec4 p3d_Vertex;
+out vec2 local_pos;
+void main() {
+    gl_Position = p3d_ModelViewProjectionMatrix * p3d_Vertex;
+    local_pos = p3d_Vertex.xy;
+}
+''',
+    fragment='''
+#version 140
+in vec2 local_pos;
+out vec4 fragColor;
+void main() {
+    float d = length(local_pos) * 2.0;
+    float v = smoothstep(0.22, 1.05, d);
+    v = v * v * (3.0 - 2.0 * v);
+    fragColor = vec4(0.038, 0.028, 0.008, v * 0.48);
+}
+''',
+)
+
+
+MINIMAP_MAP_SHADER = Shader(
+    name='minimap_map_clip_shader',
+    language=Shader.GLSL,
+    vertex='''
+#version 130
+uniform mat4 p3d_ModelViewProjectionMatrix;
+in vec4 p3d_Vertex;
+in vec4 p3d_Color;
+out vec2 local_pos;
+out vec4 vertex_color;
+
+void main() {
+    gl_Position = p3d_ModelViewProjectionMatrix * p3d_Vertex;
+    local_pos = p3d_Vertex.xy;
+    vertex_color = p3d_Color;
+}
+''',
+    fragment='''
+#version 140
+uniform vec4 p3d_ColorScale;
+uniform vec2 map_offset;
+uniform float clip_radius;
+in vec2 local_pos;
+in vec4 vertex_color;
+out vec4 fragColor;
+
+void main() {
+    vec2 clip_pos = local_pos + map_offset;
+    if (dot(clip_pos, clip_pos) > clip_radius * clip_radius) {
+        discard;
+    }
+    fragColor = p3d_ColorScale * vertex_color;
+}
+''',
+    default_input={
+        'map_offset': Vec2(0.0, 0.0),
+        'clip_radius': 0.1,
+    },
+)
 
 
 class Minimap:
@@ -46,7 +123,13 @@ class Minimap:
         self.tiles = []
         self.room_tiles = []
         self.door_indicators = []
+        self.floor_cells = []
+        self.room_cells = []
+        self.door_indicator_specs = []
         self.revealed_cells = set()
+        self.map_anchor = (0.0, 0.0)
+        self.map_dirty = True
+        self.last_map_player_cell = None
 
         self.scanning = False
         self.scan_origin = (0, 0)
@@ -57,6 +140,8 @@ class Minimap:
         self.has_monster_fixes = [False for _ in self.monsters]
         self.monster_fix_positions = [(0.0, 0.0) for _ in self.monsters]
         self.monster_pulse_ts = [MONSTER_PULSE_TIME for _ in self.monsters]
+        self.glitch_amount = 0.0
+        self.warn_sound = Audio('asset/sound/warn.wav', autoplay=False, volume=0.78)
 
         self.root = Entity(
             parent=camera.ui,
@@ -67,17 +152,25 @@ class Minimap:
         self.shadow = Entity(
             parent=self.root,
             model='circle',
-            color=rgba(0, 0, 0, 90),
-            position=(0.008, -0.008, 0.16),
-            scale=MINIMAP_SIZE * 1.04,
+            color=rgba(5, 4, 2, 60),
+            position=(0, 0, 0.20),
+            scale=MINIMAP_SIZE * 1.10,
+        )
+
+        self.rim = Entity(
+            parent=self.root,
+            model='circle',
+            color=rgba(172, 148, 48, 65),
+            position=(0, 0, 0.156),
+            scale=MINIMAP_SIZE * 1.02,
         )
 
         self.bg = Entity(
             parent=self.root,
             model='circle',
-            color=rgba(8, 9, 7, 230),
+            color=rgba(10, 9, 5, 145),
             position=(0, 0, 0.14),
-            scale=MINIMAP_SIZE,
+            scale=MINIMAP_SIZE * 0.972,
         )
 
         self.scan_pulse = Entity(
@@ -101,6 +194,25 @@ class Minimap:
             ))
 
         self.create_tiles()
+        self.map_mesh = Mesh(vertices=[], triangles=[], colors=[], mode='triangle', static=False)
+        self.map_layer = Entity(
+            parent=self.root,
+            model=self.map_mesh,
+            color=rgba(255, 255, 255, 255),
+            position=(0, 0, 0.05),
+            shader=MINIMAP_MAP_SHADER,
+        )
+        self.map_layer.set_shader_input('clip_radius', self.ui_radius())
+        self.map_layer.set_shader_input('map_offset', Vec2(0.0, 0.0))
+
+        self.vignette = Entity(
+            parent=self.root,
+            model='circle',
+            color=rgba(255, 255, 255, 255),
+            position=(0, 0, 0.01),
+            scale=MINIMAP_SIZE * 0.972,
+            shader=MINIMAP_VIGNETTE_SHADER,
+        )
 
         self.player_marker = Entity(
             parent=self.root,
@@ -113,7 +225,7 @@ class Minimap:
                 triangles=[(0, 1, 2)],
                 mode='triangle',
             ),
-            color=rgba(255, 255, 245, 255),
+            color=rgba(255, 245, 200, 255),
             position=(0, 0, -0.08),
             scale=(PLAYER_TRI_W, PLAYER_TRI_H),
         )
@@ -129,8 +241,44 @@ class Minimap:
                 enabled=False,
             ))
 
+        self.glitch_overlay = Entity(
+            parent=self.root,
+            model='circle',
+            color=rgba(255, 255, 245, 0),
+            position=(0, 0, -0.12),
+            scale=self.map_diameter(),
+            enabled=False,
+        )
+
+        self.glitch_lines = []
+        for _ in range(GLITCH_SCANLINES):
+            self.glitch_lines.append(Entity(
+                parent=self.root,
+                model='quad',
+                color=rgba(255, 255, 245, 0),
+                position=(0, 0, -0.13),
+                scale=(MINIMAP_SIZE * 0.7, MINIMAP_SIZE * 0.008),
+                enabled=False,
+            ))
+
+        self.static_noise_textures = self.create_static_noise_textures()
+        self.static_noise_frame = 0
+        self.static_noise = Entity(
+            parent=self.root,
+            model='quad',
+            texture=self.static_noise_textures[0] if self.static_noise_textures else None,
+            color=rgba(255, 255, 255, 255),
+            position=(0, 0, -0.22),
+            scale=(self.map_diameter(), self.map_diameter()),
+            enabled=False,
+        )
+        self.static_noise.always_on_top = True
+
     def ui_radius(self):
         return MINIMAP_SIZE * 0.5 * MINIMAP_INNER
+
+    def map_diameter(self):
+        return self.ui_radius() * 2.0
 
     def world_to_local(self, dx, dz):
         r = self.ui_radius()
@@ -149,18 +297,54 @@ class Minimap:
 
         return x, y
 
+    def chase_monster_distance_cells(self):
+        best = None
+
+        for monster in self.monsters:
+            if monster.state != 'chase':
+                continue
+
+            dx = monster.entity.x - self.player.x
+            dz = monster.entity.z - self.player.z
+            dist = sqrt(dx * dx + dz * dz) / self.cell
+            best = dist if best is None else min(best, dist)
+
+        return best
+
+    def target_glitch_amount(self):
+        dist = self.chase_monster_distance_cells()
+
+        if dist is None:
+            return 0.0
+
+        t = 1.0 - ((dist - GLITCH_MAX_CELLS) / max(0.001, GLITCH_START_CELLS - GLITCH_MAX_CELLS))
+        t = min(1.0, max(0.0, t))
+        return t * t * (3.0 - 2.0 * t)
+
+    def glitch_offset(self, seed, amount=None):
+        if amount is None:
+            amount = self.glitch_amount
+
+        if amount <= 0.01:
+            return 0.0, 0.0
+
+        t = time.time() * (15.0 + amount * 34.0)
+        x = sin(t + seed * 12.989) * MINIMAP_SIZE * 0.030 * amount
+        y = sin(t * 1.37 + seed * 78.233) * MINIMAP_SIZE * 0.018 * amount
+        return x, y
+
     def tile_color(self):
-        return rgba(150, 149, 117, FLOOR_ALPHA)
+        return rgba(148, 138, 88, FLOOR_ALPHA)
 
     def shaded_tile_color(self, edge_amount):
-        shade = 0.36 + 0.64 * edge_amount
+        shade = 0.32 + 0.68 * edge_amount
         alpha = int(FLOOR_ALPHA * edge_amount)
-        return rgba(int(150 * shade), int(149 * shade), int(117 * shade), alpha)
+        return rgba(int(148 * shade), int(138 * shade), int(88 * shade), alpha)
 
     def shaded_room_color(self, edge_amount):
-        shade = 0.36 + 0.64 * edge_amount
+        shade = 0.32 + 0.68 * edge_amount
         alpha = int(ROOM_ALPHA * edge_amount)
-        return rgba(int(88 * shade), int(105 * shade), int(128 * shade), alpha)
+        return rgba(int(90 * shade), int(80 * shade), int(50 * shade), alpha)
 
     def create_tiles(self):
         r = self.ui_radius()
@@ -170,25 +354,9 @@ class Minimap:
         for y, row in enumerate(self.layout):
             for x, v in enumerate(row):
                 if v == 0:
-                    tile = Entity(
-                        parent=self.root,
-                        model='quad',
-                        color=self.tile_color(),
-                        scale=(s, s),
-                        position=(0, 0, 0.05),
-                        enabled=False,
-                    )
-                    self.tiles.append((y, x, tile))
+                    self.floor_cells.append((y, x))
                 elif (y, x) in self._door_room_set:
-                    tile = Entity(
-                        parent=self.root,
-                        model='quad',
-                        color=self.shaded_room_color(1.0),
-                        scale=(s * 0.72, s * 0.72),
-                        position=(0, 0, 0.04),
-                        enabled=False,
-                    )
-                    self.room_tiles.append((y, x, tile))
+                    self.room_cells.append((y, x))
 
         for (fr, fc), rooms in self.cell_door_rooms.items():
             for (rr, rc) in rooms:
@@ -200,15 +368,7 @@ class Minimap:
                     ind_scale = (s * 0.68, s * 0.22)
                 else:
                     ind_scale = (s * 0.22, s * 0.68)
-                indicator = Entity(
-                    parent=self.root,
-                    model='quad',
-                    color=rgba(255, 215, 40, 220),
-                    scale=ind_scale,
-                    position=(0, 0, 0.03),
-                    enabled=False,
-                )
-                self.door_indicators.append((fr, fc, ind_wx, ind_wz, indicator))
+                self.door_indicator_specs.append((fr, fc, ind_wx, ind_wz, ind_scale))
 
     def set_enabled(self, enabled):
         self.enabled = enabled
@@ -235,16 +395,22 @@ class Minimap:
 
         scan_x = pc * self.cell
         scan_z = pr * self.cell
+        warn_triggered = False
         for i, monster in enumerate(self.monsters):
             monster_dx = monster.entity.x - scan_x
             monster_dz = monster.entity.z - scan_z
             monster_dist_cells = sqrt(monster_dx * monster_dx + monster_dz * monster_dz) / self.cell
 
             if monster_dist_cells <= SCAN_RADIUS_CELLS:
+                warn_triggered = True
                 self.has_monster_fixes[i] = True
                 self.monster_fix_positions[i] = (monster.entity.x, monster.entity.z)
                 self.pending_monster_pulse_dists[i] = monster_dist_cells
                 self.update_monster_dot(i)
+
+        if warn_triggered:
+            self.warn_sound.stop()
+            self.warn_sound.play()
 
     def update_scan_wave(self):
         if not self.scanning:
@@ -265,9 +431,12 @@ class Minimap:
                 d = sqrt(dr * dr + dc * dc)
 
                 if d <= SCAN_RADIUS_CELLS and old_wave <= d <= self.scan_wave:
+                    before = len(self.revealed_cells)
                     self.revealed_cells.add((r, c))
                     for door_room in self.cell_door_rooms.get((r, c), ()):
                         self.revealed_cells.add(door_room)
+                    if len(self.revealed_cells) != before:
+                        self.map_dirty = True
 
         for i, pulse_dist in enumerate(self.pending_monster_pulse_dists):
             if pulse_dist is not None and pulse_dist <= self.scan_wave:
@@ -276,7 +445,7 @@ class Minimap:
                 self.pending_monster_pulse_dists[i] = None
 
         k = min(1.0, self.scan_wave / max(0.001, self.scan_max))
-        self.scan_pulse.scale = self.ui_radius() * 2.0 * k
+        self.scan_pulse.scale = self.map_diameter() * k
         self.scan_pulse.color = rgba(178, 175, 118, int(95 * (1.0 - k)))
 
         if self.scan_wave >= self.scan_max:
@@ -284,68 +453,97 @@ class Minimap:
             self.scan_pulse.enabled = False
 
     def update_tiles(self):
+        player_cell = self.player_cell()
+
+        if self.map_dirty or player_cell != self.last_map_player_cell:
+            self.rebuild_map_mesh()
+            self.map_dirty = False
+            self.last_map_player_cell = player_cell
+
+        anchor_x, anchor_z = self.map_anchor
+        x, y = self.world_to_local(anchor_x - self.player.x, anchor_z - self.player.z)
+        self.map_layer.position = (x, y, 0.05)
+        self.map_layer.set_shader_input('map_offset', Vec2(x, y))
+
+    def rebuild_map_mesh(self):
         rr = self.ui_radius()
+        base = rr * 2.0 * (self.cell / MINIMAP_WORLD_RANGE)
+        tile_size = base * FLOOR_SCALE
+        self.map_anchor = (self.player.x, self.player.z)
+        anchor_x, anchor_z = self.map_anchor
+        vertices = []
+        triangles = []
+        colors = []
 
-        for r, c, tile in self.tiles:
+        def add_rect(local_x, local_y, width, height, tile_color):
+            i = len(vertices)
+            hw = width * 0.5
+            hh = height * 0.5
+            vertices.extend((
+                (local_x - hw, local_y - hh, 0.0),
+                (local_x + hw, local_y - hh, 0.0),
+                (local_x + hw, local_y + hh, 0.0),
+                (local_x - hw, local_y + hh, 0.0),
+            ))
+            triangles.extend(((i, i + 1, i + 2), (i, i + 2, i + 3)))
+            colors.extend((tile_color, tile_color, tile_color, tile_color))
+
+        def world_to_anchor(wx, wz):
+            return self.world_to_local(wx - anchor_x, wz - anchor_z)
+
+        for r, c in self.floor_cells:
             if (r, c) not in self.revealed_cells:
-                tile.enabled = False
                 continue
 
             wx = c * self.cell
             wz = r * self.cell
-            dx = wx - self.player.x
-            dz = wz - self.player.z
-
-            x, y = self.world_to_local(dx, dz)
+            x, y = world_to_anchor(wx, wz)
             d = sqrt(x * x + y * y)
 
-            if d > rr:
-                tile.enabled = False
+            if d > rr + tile_size:
                 continue
 
             edge_amount = min(1.0, max(0.0, (rr - d) / max(0.001, rr * EDGE_FADE)))
-            tile.enabled = True
-            tile.position = (x, y, tile.z)
-            tile.color = self.shaded_tile_color(edge_amount)
+            if edge_amount <= 0:
+                continue
+            add_rect(x, y, tile_size, tile_size, self.shaded_tile_color(edge_amount))
 
-        for r, c, tile in self.room_tiles:
+        for r, c in self.room_cells:
             if (r, c) not in self.revealed_cells:
-                tile.enabled = False
                 continue
 
             wx = c * self.cell
             wz = r * self.cell
-            dx = wx - self.player.x
-            dz = wz - self.player.z
-
-            x, y = self.world_to_local(dx, dz)
+            x, y = world_to_anchor(wx, wz)
             d = sqrt(x * x + y * y)
 
-            if d > rr:
-                tile.enabled = False
+            if d > rr + tile_size:
                 continue
 
             edge_amount = min(1.0, max(0.0, (rr - d) / max(0.001, rr * EDGE_FADE)))
-            tile.enabled = True
-            tile.position = (x, y, tile.z)
-            tile.color = self.shaded_room_color(edge_amount)
+            if edge_amount <= 0:
+                continue
+            add_rect(x, y, tile_size * 0.72, tile_size * 0.72, self.shaded_room_color(edge_amount))
 
-        for floor_r, floor_c, ind_wx, ind_wz, indicator in self.door_indicators:
+        for floor_r, floor_c, ind_wx, ind_wz, ind_scale in self.door_indicator_specs:
             if (floor_r, floor_c) not in self.revealed_cells:
-                indicator.enabled = False
                 continue
 
-            dx = ind_wx - self.player.x
-            dz = ind_wz - self.player.z
-            x, y = self.world_to_local(dx, dz)
+            x, y = world_to_anchor(ind_wx, ind_wz)
             d = sqrt(x * x + y * y)
 
-            if d > rr:
-                indicator.enabled = False
+            if d > rr + max(ind_scale):
                 continue
 
-            indicator.enabled = True
-            indicator.position = (x, y, indicator.z)
+            add_rect(x, y, ind_scale[0], ind_scale[1], rgba(210, 188, 62, 145))
+
+        self.map_layer.model = Mesh(
+            vertices=vertices,
+            triangles=triangles,
+            colors=colors,
+            mode='triangle',
+            static=False,
+        )
 
     def update_monster_dot(self, i):
         dot = self.monster_dots[i]
@@ -364,6 +562,13 @@ class Minimap:
         x, y = self.world_to_local(dx, dz)
         x, y = self.clamp_local(x, y, pad=MONSTER_DOT_SCALE * 0.8)
 
+        if self.glitch_amount > 0.02:
+            gx, gy = self.glitch_offset(i * 43 + 5, self.glitch_amount)
+            x += gx
+            y += gy
+            flicker = 0.35 + 0.65 * abs(sin(time.time() * (18.0 + self.glitch_amount * 28.0) + i))
+            dot.color = rgba(255, 35, 35, int(255 * (1.0 - self.glitch_amount * 0.45) * flicker))
+
         dot.position = (x, y, -0.06)
         pulse.position = (x, y, -0.07)
 
@@ -375,7 +580,8 @@ class Minimap:
         fx /= length
         fz /= length
 
-        self.player_marker.position = (0, 0, -0.08)
+        gx, gy = self.glitch_offset(101, self.glitch_amount * 0.7)
+        self.player_marker.position = (gx, gy, -0.08)
         self.player_marker.rotation_z = degrees(atan2(fx, fz))
 
     def update_pulse(self, pulse, t, duration, start_scale, end_scale, base_rgb, max_alpha):
@@ -405,8 +611,74 @@ class Minimap:
             110,
         )
 
+    def create_static_noise_textures(self):
+        textures = []
+        size = STATIC_NOISE_SIZE
+        center = (size - 1) * 0.5
+        radius = center
+        radius2 = radius * radius
+
+        for frame in range(STATIC_NOISE_FRAMES):
+            image = PNMImage(size, size, 4)
+            texture = PandaTexture(f'minimap_static_noise_{frame}')
+
+            for y in range(size):
+                dy = y - center
+                for x in range(size):
+                    dx = x - center
+
+                    if dx * dx + dy * dy > radius2:
+                        image.setXel(x, y, 0, 0, 0)
+                        image.setAlpha(x, y, 0)
+                        continue
+
+                    shade = random.random()
+                    alpha = random.uniform(0.25, 1.0)
+                    image.setXel(x, y, shade, shade, shade)
+                    image.setAlpha(x, y, alpha)
+
+            texture.load(image)
+            textures.append(Texture(texture))
+
+        return textures
+
+    def update_static_noise_texture(self, amount):
+        if not self.static_noise_textures:
+            return
+
+        frame = int(time.time() * STATIC_NOISE_FPS * (1.0 + amount * 1.4)) % len(self.static_noise_textures)
+        if frame != self.static_noise_frame:
+            self.static_noise.texture = self.static_noise_textures[frame]
+            self.static_noise_frame = frame
+
+        self.static_noise.color = rgba(255, 255, 255, int(75 + amount * 180))
+
+    def update_glitch(self):
+        target = self.target_glitch_amount()
+        self.glitch_amount += (target - self.glitch_amount) * min(1.0, time.dt * GLITCH_SMOOTHING)
+        amount = self.glitch_amount
+
+        if amount <= 0.015 or not self.enabled:
+            self.root.position = (*MINIMAP_POSITION, 0)
+            self.glitch_overlay.enabled = False
+            for line in self.glitch_lines:
+                line.enabled = False
+            self.static_noise.enabled = False
+            return
+
+        rx, ry = self.glitch_offset(211, min(1.0, amount * 0.25))
+        self.root.position = (MINIMAP_POSITION[0] + rx, MINIMAP_POSITION[1] + ry, 0)
+
+        self.glitch_overlay.enabled = False
+        for line in self.glitch_lines:
+            line.enabled = False
+
+        self.static_noise.enabled = True
+        self.update_static_noise_texture(amount)
+
     def update(self):
         self.update_scan_wave()
+        self.update_glitch()
 
         if not self.enabled:
             for i in range(len(self.monsters)):
