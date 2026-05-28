@@ -31,15 +31,18 @@ DIRECT_CHASE_SPEED_MULT = 1.18
 DOOR_STALK_TRIGGER_DISTANCE = CELL * 2
 DOOR_STALK_WAIT_TIME = 3.0
 DOOR_STALK_DOOR_REACH_DIST = CELL * 0.56
+DOOR_STALK_ROOM_REACH_DIST = CELL * 0.18
 DOOR_STALK_RETREAT_TIME = 3.0
+DOOR_STALK_COOLDOWN = 10.0
+DOOR_STALK_CORRIDOR_MAX_DIST = 2
 ROAR_SOUND_MIN_DISTANCE = 2.0
 ROAR_SOUND_MAX_DISTANCE = CELL * 6
 ROAR_SOUND_MIN_VOLUME = 0.20
 ROAR_SOUND_MAX_VOLUME = 1.00
 NOISE_DOOR_BREACH_REACH_DIST = DOOR_STALK_DOOR_REACH_DIST
 
-MONSTER_WANDER_SPEED = RUN_SPEED * 0.4
-MONSTER_INVESTIGATE_SPEED = RUN_SPEED * 0.7
+MONSTER_WANDER_SPEED = RUN_SPEED * 0.2
+MONSTER_INVESTIGATE_SPEED = RUN_SPEED * 0.4
 MONSTER_DOOR_STALK_SPEED = RUN_SPEED * 0.75
 
 MONSTER_COLLISION_RADIUS = 0.48
@@ -83,9 +86,12 @@ class MonsterAI:
         self.door_stalk_phase = None
         self.door_stalk_timer = 0.0
         self.door_stalk_noise_heard = False
+        self.door_stalk_entry_cell = None
+        self.door_stalk_cooldown = 0.0
         self.jumpscare_seen_this_chase = False
         self.texture = texture
         self.chase_speed = chase_speed
+        self.speed_multiplier = 1.0
         self.velocity_x = 0.0
         self.velocity_z = 0.0
         self.facing_yaw = 0.0
@@ -126,6 +132,9 @@ class MonsterAI:
         if self.roar_sound_active and self.sounds.get('roar'):
             self.sounds['roar'].volume = self.roar_sound_volume()
 
+    def set_speed_multiplier(self, multiplier):
+        self.speed_multiplier = max(0.01, multiplier)
+
     def reset_to_spawn(self):
         self.reset_to_cell(self.spawn_cell)
 
@@ -145,6 +154,8 @@ class MonsterAI:
         self.door_stalk_phase = None
         self.door_stalk_timer = 0.0
         self.door_stalk_noise_heard = False
+        self.door_stalk_entry_cell = None
+        self.door_stalk_cooldown = 0.0
         self.jumpscare_seen_this_chase = False
         self.set_state(state)
 
@@ -526,6 +537,7 @@ class MonsterAI:
 
     def apply_movement(self, dir_x, dir_z, speed, accel_override=None):
         dt = time.dt
+        speed *= self.speed_multiplier
         target_vx = dir_x * speed
         target_vz = dir_z * speed
         current_speed = (self.velocity_x * self.velocity_x + self.velocity_z * self.velocity_z) ** 0.5
@@ -630,6 +642,7 @@ class MonsterAI:
         self.door_stalk_phase = 'approach'
         self.door_stalk_timer = 0.0
         self.door_stalk_noise_heard = False
+        self.door_stalk_entry_cell = None
         self.target_cell = (key[0], key[1])
         self.path = []
         self.path_timer = 0.0
@@ -639,17 +652,18 @@ class MonsterAI:
     def breach_stalked_door(self):
         self.stop_roar_sound()
 
+        entry_cell = None
         if self.door_system and self.door_stalk_key is not None:
+            entry_cell, _ = self.door_system.door_room_for_face(*self.door_stalk_key)
             self.door_system.open_door_by_key(self.door_stalk_key)
 
-        self.door_stalk_key = None
-        self.door_stalk_door = None
-        self.door_stalk_phase = None
+        self.door_stalk_entry_cell = entry_cell or self.player_cell()
+        self.door_stalk_phase = 'enter_room'
         self.door_stalk_timer = 0.0
         self.door_stalk_noise_heard = False
         self.path = []
         self.path_timer = 0.0
-        self.set_state('chase')
+        self.target_cell = self.door_stalk_entry_cell
 
     def reached_stalked_door(self, door_dist):
         if door_dist <= NOISE_DOOR_BREACH_REACH_DIST:
@@ -700,21 +714,43 @@ class MonsterAI:
         candidates.sort(key=lambda cell: self.grid_distance(cell, player_cell), reverse=True)
         return random.choice(candidates[:max(1, min(6, len(candidates)))])
 
+    def finish_door_stalk_retreat(self):
+        self.door_stalk_key = None
+        self.door_stalk_door = None
+        self.door_stalk_phase = None
+        self.door_stalk_entry_cell = None
+        self.door_stalk_timer = 0.0
+        self.door_stalk_noise_heard = False
+        self.door_stalk_cooldown = DOOR_STALK_COOLDOWN
+        self.path = []
+        self.path_timer = 0.0
+        self.target_cell = None
+        self.apply_movement(0.0, 0.0, 0.0)
+        self.set_state('wander')
+
     def update_door_stalk(self):
-        if not self.door_stalk_key or not self.door_stalk_door:
+        if self.door_stalk_phase == 'enter_room':
+            pass
+        elif not self.door_stalk_key or not self.door_stalk_door:
             self.set_state('wander')
             return
 
-        if self.door_system and self.door_system.door_states.get(self.door_stalk_key, False):
+        if (
+            self.door_stalk_phase != 'enter_room'
+            and self.door_system
+            and self.door_system.door_states.get(self.door_stalk_key, False)
+        ):
             self.breach_stalked_door()
             return
 
-        door_x, _, door_z = self.door_stalk_door['position']
-        dx = door_x - self.entity.x
-        dz = door_z - self.entity.z
-        door_dist = (dx * dx + dz * dz) ** 0.5
+        door_dist = 0.0
+        if self.door_stalk_door:
+            door_x, _, door_z = self.door_stalk_door['position']
+            dx = door_x - self.entity.x
+            dz = door_z - self.entity.z
+            door_dist = (dx * dx + dz * dz) ** 0.5
 
-        if self.door_stalk_noise_heard and self.door_stalk_phase != 'breach':
+        if self.door_stalk_noise_heard and self.door_stalk_phase not in ('breach', 'enter_room'):
             self.door_stalk_phase = 'breach'
             self.door_stalk_timer = 0.0
             self.target_cell = (self.door_stalk_key[0], self.door_stalk_key[1])
@@ -737,22 +773,27 @@ class MonsterAI:
 
             if self.door_stalk_timer <= 0.0:
                 self.door_stalk_phase = 'retreat'
-                self.door_stalk_timer = 0.0
+                self.door_stalk_timer = DOOR_STALK_RETREAT_TIME
                 self.target_cell = self.pick_retreat_target()
                 self.path = self.find_path(self.monster_cell(), self.target_cell)
                 self.path_timer = 0.0
             return
 
         if self.door_stalk_phase == 'retreat':
-            if self.distance_to_player() >= ROAR_SOUND_MAX_DISTANCE:
+            self.door_stalk_timer = max(0.0, self.door_stalk_timer - time.dt)
+
+            if self.distance_to_player() >= ROAR_SOUND_MAX_DISTANCE or self.door_stalk_timer <= 0.0:
                 self.teleport_far_from_start()
                 return
 
             if not self.path:
-                self.target_cell = self.pick_retreat_target()
-                self.path = self.find_path(self.monster_cell(), self.target_cell)
+                self.teleport_far_from_start()
+                return
 
             self.move_along_path(MONSTER_WANDER_SPEED)
+
+            if not self.path:
+                self.teleport_far_from_start()
             return
 
         if self.door_stalk_phase == 'breach':
@@ -766,9 +807,37 @@ class MonsterAI:
 
             if self.reached_stalked_door(door_dist):
                 self.breach_stalked_door()
+            return
+
+        if self.door_stalk_phase == 'enter_room':
+            if not self.door_stalk_entry_cell:
+                self.set_state('chase')
+                return
+
+            tx, tz = self.cell_center(self.door_stalk_entry_cell)
+            dx = tx - self.entity.x
+            dz = tz - self.entity.z
+            dist = max((dx * dx + dz * dz) ** 0.5, 0.001)
+            self.apply_movement(
+                dx / dist,
+                dz / dist,
+                self.chase_speed,
+                accel_override=MONSTER_DIRECT_CHASE_ACCEL,
+            )
+
+            if dist <= DOOR_STALK_ROOM_REACH_DIST:
+                self.door_stalk_key = None
+                self.door_stalk_door = None
+                self.door_stalk_phase = None
+                self.door_stalk_entry_cell = None
+                self.path = []
+                self.path_timer = 0.0
+                self.set_state('chase')
+            return
 
     def update(self):
         self.state_time += time.dt
+        self.door_stalk_cooldown = max(0.0, self.door_stalk_cooldown - time.dt)
         closed_room_key, closed_room_door = self.player_closed_room_door()
         player_hidden = closed_room_key is not None and closed_room_door is not None
 
@@ -787,6 +856,11 @@ class MonsterAI:
             self.state not in ('door_stalk', 'idle')
             and player_hidden
             and self.distance_to_player() <= DOOR_STALK_TRIGGER_DISTANCE
+            and self.door_stalk_cooldown <= 0.0
+            and self.grid_distance(
+                self.monster_cell(),
+                (closed_room_key[0], closed_room_key[1]),
+            ) <= DOOR_STALK_CORRIDOR_MAX_DIST
         ):
             self.begin_door_stalk(closed_room_key, closed_room_door)
 

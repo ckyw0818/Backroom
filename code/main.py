@@ -46,6 +46,7 @@ JUMPSCARE_MAX_DISTANCE = 14.0
 JUMPSCARE_MIN_VOLUME = 0.65
 JUMPSCARE_MAX_VOLUME = 3.0
 DEATH_DISTANCE = CELL * 0.2
+JUMPSCARE_PROXIMITY_DISTANCE = DEATH_DISTANCE * 1.5
 DEATH_BLACK_TIME = 3.5
 RESPAWN_FADE_TIME = 1.0
 RESPAWN_YAW = -90
@@ -54,8 +55,9 @@ DEATH_HEART_ANIM_TIME = 1.0
 DEATH_GAME_OVER_DELAY = 0.45
 VENT_VOLUME = 0.60
 MONSTER_SPAWN_COUNT = 4
-MONSTER_SPAWN_MIN_DISTANCE = 12
+MONSTER_SPAWN_MIN_DISTANCE = 20
 MONSTER_SPAWN_MIN_SEPARATION = 8
+MONSTER_FINAL_NOTE_SPEED_MULTIPLIER = 1.25
 
 
 def rgba(r, g, b, a):
@@ -113,9 +115,47 @@ def heartbeat_targets(monster):
     return volume, rate
 
 
+def monster_active(monster):
+    return getattr(monster.entity, 'enabled', True)
+
+
+def active_monsters():
+    return [monster for monster in monsters if monster_active(monster)]
+
+
+def collected_note_count():
+    return len(getattr(map_renderer, 'collected_notes', ()))
+
+
+def target_active_monster_count(note_count):
+    return min(MONSTER_SPAWN_COUNT, max(1, note_count))
+
+
+def set_monster_active(monster, active):
+    if monster_active(monster) == active:
+        return
+
+    monster.entity.enabled = active
+
+    if active:
+        monster.reset_to_spawn()
+    else:
+        monster.silence_all_sounds()
+
+
+def update_monster_pressure():
+    note_count = collected_note_count()
+    active_count = target_active_monster_count(note_count)
+    speed_multiplier = MONSTER_FINAL_NOTE_SPEED_MULTIPLIER if note_count >= 5 else 1.0
+
+    for index, monster in enumerate(monsters):
+        set_monster_active(monster, index < active_count)
+        monster.set_speed_multiplier(speed_multiplier)
+
+
 def emit_noise(strength):
     cell = player_noise_cell()
-    for monster in monsters:
+    for monster in active_monsters():
         monster.investigate_noise(cell, strength)
 
 
@@ -165,14 +205,18 @@ def update_jumpscares():
     if jumpscare_timer > 0.0 and jumpscare_monster:
         jumpscare_sound.volume = jumpscare_volume_for(jumpscare_monster)
 
-    for monster in monsters:
+    for monster in active_monsters():
         if monster.state != 'chase':
             continue
         if monster.jumpscare_seen_this_chase:
             continue
-        if not monster_on_screen(monster):
-            continue
-        if not monster.has_line_of_sight_to_player():
+        seen_trigger = monster_on_screen(monster) and monster.has_line_of_sight_to_player()
+        close_trigger = (
+            monster.distance_to_player() <= JUMPSCARE_PROXIMITY_DISTANCE
+            and not monster.player_hidden_behind_closed_door()
+        )
+
+        if not (seen_trigger or close_trigger):
             continue
 
         monster.jumpscare_seen_this_chase = True
@@ -211,8 +255,9 @@ def set_death_screen_visible(visible):
 
 
 def reset_player_to_start():
-    player.position = (START_ROOM_CELL_RUNTIME[1] * CELL, 0, START_ROOM_CELL_RUNTIME[0] * CELL)
-    player.rotation_y = RESPAWN_YAW
+    x, z, yaw = player_start_pose()
+    player.position = (x, 0, z)
+    player.rotation_y = yaw
     player.speed = 0
     player.camera_pivot.x = 0
     player.camera_pivot.y = head_bob.base_pivot_y
@@ -221,6 +266,34 @@ def reset_player_to_start():
     head_bob.run_blend = 0.0
     head_bob.jitter_x = 0.0
     head_bob.jitter_y = 0.0
+
+
+def player_start_pose():
+    room_r, room_c = START_ROOM_CELL_RUNTIME
+    room_x = room_c * CELL
+    room_z = room_r * CELL
+    door_key = getattr(map_renderer, '_first_lockable_door_key', None)
+
+    if door_key is None:
+        return room_x, room_z, RESPAWN_YAW
+
+    door_r, door_c, door_face = door_key
+    door_room_cell = map_renderer.door_room_for_face(door_r, door_c, door_face)[0]
+
+    if door_room_cell != START_ROOM_CELL_RUNTIME:
+        return room_x, room_z, RESPAWN_YAW
+
+    door_x, _, door_z = map_renderer.door_world_position(door_c * CELL, door_r * CELL, door_face)
+    dx = door_x - room_x
+    dz = door_z - room_z
+    dist = max((dx * dx + dz * dz) ** 0.5, 0.001)
+    dir_x = dx / dist
+    dir_z = dz / dist
+    away_from_door = CELL * 0.24
+    spawn_x = room_x - dir_x * away_from_door
+    spawn_z = room_z - dir_z * away_from_door
+    yaw = math.degrees(math.atan2(door_x - spawn_x, door_z - spawn_z))
+    return spawn_x, spawn_z, yaw
 
 
 def reset_run_after_death():
@@ -243,6 +316,7 @@ def reset_run_after_death():
         monster.reset_to_cell(spawn_cell)
         monster.silence_all_sounds()
 
+    update_monster_pressure()
     minimap.reset_monster_fixes()
     minimap_visible = False
     minimap.set_enabled(False)
@@ -270,7 +344,7 @@ def fade_monster_sounds(amount):
 
     jumpscare_sound.volume = JUMPSCARE_MAX_VOLUME * volume
 
-    for monster in monsters:
+    for monster in active_monsters():
         monster.set_sound_volume_scale(volume)
         if volume <= 0.0:
             monster.silence_all_sounds()
@@ -339,7 +413,7 @@ def update_player_caught():
     if map_renderer.closed_door_for_room_cell(map_renderer.player_cell())[0] is not None:
         return
 
-    for monster in monsters:
+    for monster in active_monsters():
         if monster.distance_to_player() <= DEATH_DISTANCE:
             start_death_sequence()
             return
@@ -554,6 +628,7 @@ footstep_sounds = [
 ]
 head_bob = HeadBob(player, footstep_sounds, lambda: emit_noise(NOISE_FOOTSTEP_STRENGTH))
 map_renderer = MapRenderer(player, light_system, textures, START_ROOM_CELL_RUNTIME)
+reset_player_to_start()
 monster_textures = [
     'asset/texture/obunga.png',
     'asset/texture/obunga2.png',
@@ -575,6 +650,7 @@ monsters = [
 ]
 for monster in monsters:
     monster.set_door_system(map_renderer, MONSTER_SPAWN_MIN_DISTANCE)
+update_monster_pressure()
 post_effects = PostEffects()
 
 minimap = Minimap(
@@ -640,15 +716,15 @@ def update():
     map_renderer.process_queues()
     map_renderer.update_doors()
     map_renderer.update_drawers()
+    update_monster_pressure()
 
-    for monster in monsters:
+    for monster in active_monsters():
         monster.update()
 
+    update_jumpscares()
     update_player_caught()
     if death_state != 'alive':
         return
-
-    update_jumpscares()
 
     minimap_scan_down = held_keys['r']
     if minimap_scan_down and not minimap_scan_was_down:
@@ -665,22 +741,22 @@ def update():
 
     minimap.update()
     crosshair.update(map_renderer.can_interact(), minimap_visible)
-    active_monster = min(monsters, key=lambda monster: monster.distance_to_player())
-    target_heartbeat_volume, target_heartbeat_rate = heartbeat_targets(active_monster)
+    nearest_monster = min(active_monsters(), key=lambda monster: monster.distance_to_player())
+    target_heartbeat_volume, target_heartbeat_rate = heartbeat_targets(nearest_monster)
     heartbeat_lerp = min(1.0, time.dt * HEARTBEAT_SMOOTHING)
     heartbeat_sound.volume += (target_heartbeat_volume - heartbeat_sound.volume) * heartbeat_lerp
     heartbeat_rate += (target_heartbeat_rate - heartbeat_rate) * heartbeat_lerp
     set_audio_rate(heartbeat_sound, heartbeat_rate)
 
     if post_effects:
-        if active_monster.state == 'chase':
-            dist = active_monster.distance_to_player()
+        if nearest_monster.state == 'chase':
+            dist = nearest_monster.distance_to_player()
             close = 1.0 - min(1.0, max(0.0, (dist - 2.0) / 14.0))
             post_effects.set_threat(0.45 + close * 0.55)
-        elif active_monster.state == 'alert':
+        elif nearest_monster.state == 'alert':
             post_effects.set_threat(0.65)
-        elif active_monster.state == 'investigate':
-            dist = active_monster.distance_to_player()
+        elif nearest_monster.state == 'investigate':
+            dist = nearest_monster.distance_to_player()
             close = 1.0 - min(1.0, max(0.0, (dist - 3.0) / 9.0))
             post_effects.set_threat(close * 0.25)
         else:

@@ -468,6 +468,9 @@ class Minimap:
         scan_z = pr * self.cell
         observed_monster_count = 0
         for i, monster in enumerate(self.monsters):
+            if not getattr(monster.entity, 'enabled', True):
+                continue
+
             monster_dx = monster.entity.x - scan_x
             monster_dz = monster.entity.z - scan_z
             monster_dist_cells = sqrt(monster_dx * monster_dx + monster_dz * monster_dz) / self.cell
@@ -670,6 +673,11 @@ class Minimap:
     def update_monster_dot(self, i):
         dot = self.monster_dots[i]
         pulse = self.monster_pulses[i]
+
+        if not getattr(self.monsters[i].entity, 'enabled', True):
+            dot.enabled = False
+            pulse.enabled = False
+            return
 
         if not self.has_monster_fixes[i]:
             dot.enabled = False

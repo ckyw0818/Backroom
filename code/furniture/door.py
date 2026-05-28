@@ -602,8 +602,6 @@ class DoorMixin(BedMixin, DrawerMixin):
 
         _, _, bed_face = self.add_bed_decoration(entities, cx, cz, skip_faces, west_x, north_z, east_x, south_z, lit_near)
         self.add_drawer_decoration(entities, cx, cz, skip_faces, bed_face, west_x, north_z, east_x, south_z, lit_near)
-        if room_cell == self.start_room_cell:
-            self.add_start_room_test_keypad(entities, cx, cz, west_x, north_z, east_x, south_z)
 
         return entities
 
@@ -742,46 +740,6 @@ class DoorMixin(BedMixin, DrawerMixin):
             'result_sound_timer': 0.0,
             'pending_unlock': False,
             'door_key': door_key,
-        }
-
-    def add_start_room_test_keypad(self, entities, cx, cz, west_x, north_z, east_x, south_z):
-        face = 'south'
-        keypad_key = ('test_keypad', self.start_room_cell[0], self.start_room_cell[1])
-        keypad_entity = Entity(
-            position=(cx, KEYPAD_CENTER_Y, south_z - KEYPAD_WALL_OFFSET),
-            rotation=(0, DOOR_FACE_ROTATIONS[face], 0),
-            scale=self.keypad_model_scale,
-        )
-        keypad_node = self.keypad_model.copyTo(keypad_entity)
-        self.prepare_live_keypad_model(keypad_node)
-        entities.append(keypad_entity)
-
-        display = self.add_keypad_display(keypad_entity)
-
-        buttons = {}
-        for label, bx, bz in KEYPAD_BUTTONS:
-            button = Entity(
-                parent=keypad_entity,
-                model='cube',
-                color=self.keypad_button_color(),
-                position=(bx, bz, KEYPAD_BUTTON_Z),
-                scale=self.keypad_button_scale(label),
-            )
-            button.always_on_top = True
-            button.base_position = (button.x, button.y, button.z)
-            button.debug_label = self.add_keypad_debug_label(keypad_entity, label, bx, bz)
-            buttons[label] = button
-
-        self.active_keypads[keypad_key] = {
-            'entity': keypad_entity,
-            'display': display,
-            'buttons': buttons,
-            'input': '',
-            'message_timer': 0.0,
-            'pending_result_sound': None,
-            'result_sound_timer': 0.0,
-            'pending_unlock': False,
-            'door_key': None,
         }
 
     def add_door_decoration(self, entities, x, z, face, near_lights, wall_collider=None):
