@@ -25,10 +25,11 @@ from map.mesh_builder import MeshBuilderMixin
 
 
 class MapRenderer(DoorMixin, MeshBuilderMixin):
-    def __init__(self, player, light_system, textures):
+    def __init__(self, player, light_system, textures, start_room_cell):
         self.player = player
         self.light_system = light_system
         self.textures = textures
+        self.start_room_cell = start_room_cell
         self.prebuilt_cells = {}
         self.prebuilt_rooms = {}
         self.prebuilt_lights = {}
@@ -42,6 +43,7 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
         self.drawer_states = {}
         self.active_doors = {}
         self.active_drawers = {}
+        self.active_keypads = {}
         self.init_door_assets()
 
         self.walkable_cells = {

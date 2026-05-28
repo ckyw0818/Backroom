@@ -1,8 +1,9 @@
 import math
+import random
 
 from direct.showbase import ShowBaseGlobal
 from panda3d.core import Filename, NodePath, TransparencyAttrib
-from ursina import Audio, Entity, color, time
+from ursina import Audio, Entity, Text, color, time
 
 from furniture.bed import BedMixin
 from furniture.drawer import DrawerMixin
@@ -13,7 +14,6 @@ from map.map_data import (
     PROJECT_DIR,
     ROOM_WALL_INSET,
     ROWS,
-    START_ROOM_CELL,
     WALL_COLLIDER_LEN,
     WALL_COLLIDER_T,
     WALL_H,
@@ -49,7 +49,6 @@ DOOR_FACE_ROTATIONS = {
 DOOR_OPEN_SIGN = 1
 DOOR_MODEL_ROOT = 'Null'
 DOOR_MOVING_NODES = ('door',)
-START_ROOM_DOOR_KEY = (START_ROOM_CELL[0], START_ROOM_CELL[1] - 1, 'east')
 DOOR_RATTLE_DURATION = 0.42
 DOOR_RATTLE_SWINGS = 2
 DOOR_RATTLE_ANGLE = 1
@@ -59,6 +58,43 @@ EXIT_SIGN_MODEL_PATH = PROJECT_DIR / 'asset' / 'model' / 'exit_sign.glb'
 EXIT_SIGN_TARGET_W = 0.60
 EXIT_SIGN_TARGET_H = 0.30
 
+KEYPAD_MODEL_PATH = PROJECT_DIR / 'asset' / 'model' / 'keypad2.glb'
+KEYPAD_TARGET_H = 0.385
+KEYPAD_RIGHT_OFFSET = 0.86
+KEYPAD_WALL_OFFSET = 0.13
+KEYPAD_CENTER_Y = 1.25
+KEYPAD_CODE = '12345'
+KEYPAD_INTERACT_RAY_DISTANCE = CELL * 0.6
+KEYPAD_PRESS_DEPTH = 0.10
+KEYPAD_PRESS_TIME = 0.16
+KEYPAD_RESULT_SOUND_DELAY = 0.8
+KEYPAD_DISPLAY_CLEAR_TIME = 0.8
+KEYPAD_BUTTON_SIZE = (0.22, 0.22, 0.035)
+KEYPAD_BUTTON_Z = 0.155
+KEYPAD_DEBUG_HITBOXES = False
+KEYPAD_DEBUG_LABEL_SCALE = 0.22
+KEYPAD_DISPLAY_Z = KEYPAD_BUTTON_Z + 0.025
+KEYPAD_DISPLAY_SEGMENTS = {
+    '0': 'abcdef',
+    '1': 'bc',
+    '2': 'abged',
+    '3': 'abgcd',
+    '4': 'fgbc',
+    '5': 'afgcd',
+    '6': 'afgecd',
+    '7': 'abc',
+    '8': 'abcdefg',
+    '9': 'abfgcd',
+    '-': 'g',
+    '_': 'd',
+}
+KEYPAD_BUTTONS = (
+    ('1', 0.597, 0.365), ('2', 0.235, 0.365), ('3', -0.126, 0.365),
+    ('4', 0.597, 0.004), ('5', 0.235, 0.004), ('6', -0.126, 0.004),
+    ('7', 0.597, -0.357), ('8', 0.235, -0.357), ('9', -0.126, -0.357),
+    ('0', 0.235, -0.717), ('enter', -0.62, -0.10),
+)
+
 
 class DoorMixin(BedMixin, DrawerMixin):
     def init_door_assets(self):
@@ -66,12 +102,13 @@ class DoorMixin(BedMixin, DrawerMixin):
         self.door_model_scale = self.fit_door_model_scale(self.door_model)
         self.exit_sign_model = self.load_exit_sign_model()
         self.exit_sign_model_scale = self.fit_exit_sign_model_scale(self.exit_sign_model)
+        self.keypad_model = self.load_keypad_model()
+        self.keypad_model_scale = self.fit_keypad_model_scale(self.keypad_model)
         self.init_bed_assets()
         self.init_drawer_assets()
         self.door_open_sound = Audio('asset/sound/door_open.wav', autoplay=False, volume=0.5)
         self.door_close_sound = Audio('asset/sound/door_close.wav', autoplay=False, volume=0.68)
         self.key_unlock_sound = Audio('asset/sound/key_unlock.wav', autoplay=False, volume=1.0)
-        self.door_rattle_sound = Audio('asset/sound/door_rattle.wav', autoplay=False, volume=1.0)
 
     def build_door_lookup(self):
         generated_doors = {
@@ -82,13 +119,13 @@ class DoorMixin(BedMixin, DrawerMixin):
             if not (r <= 1 and c <= 2)
             and (r * 17 + c * 31 + DOOR_FACE_SALTS[face]) % DOOR_DENSITY == 0
         }
-        self._door_set = frozenset(generated_doors | {START_ROOM_DOOR_KEY})
+        self._door_set = frozenset(generated_doors)
 
         self._cell_door_rooms = {}
-        self.exit_room_cell = self.nearest_exit_room_cell(START_ROOM_CELL)
+        self.exit_room_cell = self.random_edge_exit_room_cell(self.start_room_cell)
         self.exit_room_cells = frozenset((self.exit_room_cell,)) if self.exit_room_cell else frozenset()
         self.exit_sign_door_key = self.locked_room_door_key(self.exit_room_cell)
-        self._first_lockable_door_key = self.locked_room_door_key(START_ROOM_CELL)
+        self._first_lockable_door_key = self.locked_room_door_key(self.start_room_cell)
         for r, c in self.walkable_cells:
             rooms = set()
             for face in ('north', 'south', 'west', 'east'):
@@ -102,7 +139,30 @@ class DoorMixin(BedMixin, DrawerMixin):
             if rooms:
                 self._cell_door_rooms[(r, c)] = rooms
 
-    def nearest_exit_room_cell(self, start_room_cell):
+        self.choose_note_placements()
+
+    def random_edge_exit_room_cell(self, start_room_cell):
+        candidates = []
+
+        for r, c, face in sorted(self._door_set):
+            room_cell, _ = self.door_room_for_face(r, c, face)
+            rr, rc = room_cell
+
+            if room_cell == start_room_cell:
+                continue
+            if not (0 <= rr < ROWS and 0 <= rc < COLS and LAYOUT[rr][rc] == 1):
+                continue
+            if not (rr in (0, ROWS - 1) or rc in (0, COLS - 1)):
+                continue
+
+            candidates.append(room_cell)
+
+        if candidates:
+            return random.choice(candidates)
+
+        return self.farthest_exit_room_cell(start_room_cell)
+
+    def farthest_exit_room_cell(self, start_room_cell):
         candidates = []
 
         for r, c, face in sorted(self._door_set):
@@ -118,7 +178,7 @@ class DoorMixin(BedMixin, DrawerMixin):
             dc = rc - start_room_cell[1]
             candidates.append((dr * dr + dc * dc, abs(dr) + abs(dc), room_cell))
 
-        return min(candidates)[2] if candidates else None
+        return max(candidates)[2] if candidates else None
 
     def locked_room_door_key(self, room_cell):
         if room_cell is None:
@@ -133,7 +193,7 @@ class DoorMixin(BedMixin, DrawerMixin):
         return None
 
     def door_lockable(self, key):
-        return key == self._first_lockable_door_key
+        return key == self._first_lockable_door_key or key == self.exit_sign_door_key
 
     def door_locked(self, key, lockable):
         if key not in self.door_lock_states:
@@ -168,6 +228,15 @@ class DoorMixin(BedMixin, DrawerMixin):
 
     def exit_sign_rotation_for_face(self, face):
         return (DOOR_FACE_ROTATIONS[face]) % 360
+
+    def keypad_position_for_door(self, x, z, face):
+        if face == 'north':
+            return x + KEYPAD_RIGHT_OFFSET, KEYPAD_CENTER_Y, z - CELL / 2 + KEYPAD_WALL_OFFSET
+        if face == 'south':
+            return x - KEYPAD_RIGHT_OFFSET, KEYPAD_CENTER_Y, z + CELL / 2 - KEYPAD_WALL_OFFSET
+        if face == 'west':
+            return x - CELL / 2 + KEYPAD_WALL_OFFSET, KEYPAD_CENTER_Y, z - KEYPAD_RIGHT_OFFSET
+        return x + CELL / 2 - KEYPAD_WALL_OFFSET, KEYPAD_CENTER_Y, z + KEYPAD_RIGHT_OFFSET
 
     def load_door_model(self):
         scene = ShowBaseGlobal.base.loader.loadModel(Filename.fromOsSpecific(str(DOOR_MODEL_PATH)))
@@ -204,6 +273,28 @@ class DoorMixin(BedMixin, DrawerMixin):
 
         return model
 
+    def load_keypad_model(self):
+        scene = ShowBaseGlobal.base.loader.loadModel(Filename.fromOsSpecific(str(KEYPAD_MODEL_PATH)))
+
+        if scene.isEmpty():
+            raise RuntimeError(f'Failed to load keypad model: {KEYPAD_MODEL_PATH}')
+
+        model = NodePath('keypad_template')
+        scene.copyTo(model)
+        scene.removeNode()
+        model.setTwoSided(True)
+
+        for np in model.findAllMatches('**'):
+            if not np.isEmpty():
+                np.setTwoSided(True)
+
+        bounds = model.getTightBounds()
+        if bounds:
+            mn, mx = bounds
+            model.setPos(-(mn.x + mx.x) * 0.5, -(mn.y + mx.y) * 0.5, -(mn.z + mx.z) * 0.5)
+
+        return model
+
     def fit_exit_sign_model_scale(self, model):
         bounds = model.getTightBounds()
 
@@ -214,6 +305,16 @@ class DoorMixin(BedMixin, DrawerMixin):
         w = max(mx.x - mn.x, mx.z - mn.z, 0.001)
         h = max(mx.y - mn.y, 0.001)
         return min(EXIT_SIGN_TARGET_W / w, EXIT_SIGN_TARGET_H / h)
+
+    def fit_keypad_model_scale(self, model):
+        bounds = model.getTightBounds()
+
+        if not bounds:
+            return 1.0
+
+        mn, mx = bounds
+        height = max(mx.z - mn.z, mx.y - mn.y, 0.001)
+        return KEYPAD_TARGET_H / height
 
     def prepare_door_model(self, model):
         model.setTwoSided(True)
@@ -254,6 +355,53 @@ class DoorMixin(BedMixin, DrawerMixin):
         if face == 'west':
             return (r, c - 1), 'east'
         return (r, c + 1), 'west'
+
+    def door_key_for_room_cell(self, room_cell):
+        if room_cell is None:
+            return None
+
+        for key, door in self.active_doors.items():
+            r, c, face = key
+            found_room_cell, _ = self.door_room_for_face(r, c, face)
+
+            if found_room_cell == room_cell:
+                return key
+
+        return None
+
+    def closed_door_for_room_cell(self, room_cell):
+        key = self.door_key_for_room_cell(room_cell)
+
+        if key is None:
+            return None, None
+
+        door = self.active_doors.get(key)
+        if not door or self.door_states.get(key, False):
+            return None, None
+
+        return key, door
+
+    def open_door_by_key(self, key):
+        door = self.active_doors.get(key)
+
+        if not door:
+            return False
+
+        self.door_lock_states[key] = False
+        door['locked'] = False
+        door['pending_open'] = False
+        door['unlock_open_timer'] = 0.0
+        self.door_states[key] = True
+        door['target'] = 1.0
+        door['open'] = max(door.get('open', 0.0), 0.55)
+
+        collider = door.get('wall_collider')
+        if collider:
+            self.set_door_wall_collision(collider, False)
+
+        self.door_open_sound.stop()
+        self.door_open_sound.play(start=0.3)
+        return True
 
     def room_openings(self, room_cell):
         rr, rc = room_cell
@@ -454,6 +602,8 @@ class DoorMixin(BedMixin, DrawerMixin):
 
         _, _, bed_face = self.add_bed_decoration(entities, cx, cz, skip_faces, west_x, north_z, east_x, south_z, lit_near)
         self.add_drawer_decoration(entities, cx, cz, skip_faces, bed_face, west_x, north_z, east_x, south_z, lit_near)
+        if room_cell == self.start_room_cell:
+            self.add_start_room_test_keypad(entities, cx, cz, west_x, north_z, east_x, south_z)
 
         return entities
 
@@ -481,6 +631,158 @@ class DoorMixin(BedMixin, DrawerMixin):
                 out.append((node, node.getH()))
 
         return out
+
+    def add_keypad_debug_label(self, keypad_entity, label, x, y):
+        if not KEYPAD_DEBUG_HITBOXES:
+            return None
+
+        display_label = {'enter': 'ENT'}.get(label, label)
+        text = Text(
+            parent=keypad_entity,
+            text=display_label,
+            origin=(0, 0),
+            position=(x, y, KEYPAD_BUTTON_Z + 0.025),
+            scale=KEYPAD_DEBUG_LABEL_SCALE,
+            color=color.rgba(255, 255, 255, 235),
+        )
+        text.always_on_top = True
+        return text
+
+    def keypad_button_scale(self, label):
+        if label == 'enter':
+            return 0.38, 0.60, KEYPAD_BUTTON_SIZE[2]
+
+        return KEYPAD_BUTTON_SIZE
+
+    def prepare_live_keypad_model(self, keypad_node):
+        keypad_node.setTwoSided(True)
+
+    def keypad_button_color(self):
+        if KEYPAD_DEBUG_HITBOXES:
+            return color.rgba(75, 215, 255, 135)
+
+        return color.rgba(0, 0, 0, 0)
+
+    def add_keypad_display(self, keypad_entity):
+        digits = []
+        start_x = 0.55
+        step_x = -0.16
+        segment_data = {
+            'a': (0.0, 0.048, 0.095, 0.018),
+            'b': (0.052, 0.018, 0.018, 0.060),
+            'c': (0.052, -0.048, 0.018, 0.060),
+            'd': (0.0, -0.080, 0.095, 0.018),
+            'e': (-0.052, -0.048, 0.018, 0.060),
+            'f': (-0.052, 0.018, 0.018, 0.060),
+            'g': (0.0, -0.016, 0.095, 0.018),
+        }
+
+        for digit_index in range(5):
+            digit = {}
+            x = start_x + digit_index * step_x
+
+            for name, (sx, sy, sw, sh) in segment_data.items():
+                segment = Entity(
+                    parent=keypad_entity,
+                    model='cube',
+                    color=color.rgba(70, 255, 45, 0),
+                    position=(x - sx, 0.705 + sy, KEYPAD_DISPLAY_Z),
+                    scale=(sw, sh, 0.006),
+                    unlit=True,
+                )
+                digit[name] = segment
+
+            digits.append(digit)
+
+        return {'digits': digits, 'text': ''}
+
+    def set_keypad_display_text(self, keypad, text):
+        keypad['display']['text'] = text
+        shown = text[-5:].rjust(5)
+
+        for digit, char in zip(keypad['display']['digits'], shown):
+            active = KEYPAD_DISPLAY_SEGMENTS.get(char, '')
+
+            for name, segment in digit.items():
+                segment.color = color.rgba(70, 255, 45, 245 if name in active else 0)
+
+    def add_exit_keypad(self, entities, door_key, x, z, face):
+        keypad_entity = Entity(
+            position=self.keypad_position_for_door(x, z, face),
+            rotation=(0, DOOR_FACE_ROTATIONS[face], 0),
+            scale=self.keypad_model_scale,
+        )
+        keypad_node = self.keypad_model.copyTo(keypad_entity)
+        self.prepare_live_keypad_model(keypad_node)
+        entities.append(keypad_entity)
+
+        display = self.add_keypad_display(keypad_entity)
+
+        buttons = {}
+        for label, bx, bz in KEYPAD_BUTTONS:
+            button = Entity(
+                parent=keypad_entity,
+                model='cube',
+                color=self.keypad_button_color(),
+                position=(bx, bz, KEYPAD_BUTTON_Z),
+                scale=self.keypad_button_scale(label),
+            )
+            button.always_on_top = True
+            button.base_position = (button.x, button.y, button.z)
+            button.debug_label = self.add_keypad_debug_label(keypad_entity, label, bx, bz)
+            buttons[label] = button
+
+        self.active_keypads[door_key] = {
+            'entity': keypad_entity,
+            'display': display,
+            'buttons': buttons,
+            'input': '',
+            'message_timer': 0.0,
+            'pending_result_sound': None,
+            'result_sound_timer': 0.0,
+            'pending_unlock': False,
+            'door_key': door_key,
+        }
+
+    def add_start_room_test_keypad(self, entities, cx, cz, west_x, north_z, east_x, south_z):
+        face = 'south'
+        keypad_key = ('test_keypad', self.start_room_cell[0], self.start_room_cell[1])
+        keypad_entity = Entity(
+            position=(cx, KEYPAD_CENTER_Y, south_z - KEYPAD_WALL_OFFSET),
+            rotation=(0, DOOR_FACE_ROTATIONS[face], 0),
+            scale=self.keypad_model_scale,
+        )
+        keypad_node = self.keypad_model.copyTo(keypad_entity)
+        self.prepare_live_keypad_model(keypad_node)
+        entities.append(keypad_entity)
+
+        display = self.add_keypad_display(keypad_entity)
+
+        buttons = {}
+        for label, bx, bz in KEYPAD_BUTTONS:
+            button = Entity(
+                parent=keypad_entity,
+                model='cube',
+                color=self.keypad_button_color(),
+                position=(bx, bz, KEYPAD_BUTTON_Z),
+                scale=self.keypad_button_scale(label),
+            )
+            button.always_on_top = True
+            button.base_position = (button.x, button.y, button.z)
+            button.debug_label = self.add_keypad_debug_label(keypad_entity, label, bx, bz)
+            buttons[label] = button
+
+        self.active_keypads[keypad_key] = {
+            'entity': keypad_entity,
+            'display': display,
+            'buttons': buttons,
+            'input': '',
+            'message_timer': 0.0,
+            'pending_result_sound': None,
+            'result_sound_timer': 0.0,
+            'pending_unlock': False,
+            'door_key': None,
+        }
 
     def add_door_decoration(self, entities, x, z, face, near_lights, wall_collider=None):
         key = self.door_key(round(z / CELL), round(x / CELL), face)
@@ -540,6 +842,7 @@ class DoorMixin(BedMixin, DrawerMixin):
             glow.setTransparency(TransparencyAttrib.MAlpha)
             glow.setDepthWrite(False)
             entities.append(sign_entity)
+            self.add_exit_keypad(entities, key, x, z, face)
         else:
             entities.append(Entity(
                 model='cube',
@@ -569,6 +872,185 @@ class DoorMixin(BedMixin, DrawerMixin):
 
         for collider in getattr(wall_collider, '_door_side_colliders', ()):
             collider.collider = 'box'
+
+    def keypad_ray_box_distance(self, origin, ray, mn, mx):
+        t_min = 0.0
+        t_max = KEYPAD_INTERACT_RAY_DISTANCE
+
+        for origin_value, ray_value, min_value, max_value in (
+            (origin.x, ray.x, mn.x, mx.x),
+            (origin.y, ray.y, mn.y, mx.y),
+            (origin.z, ray.z, mn.z, mx.z),
+        ):
+            if abs(ray_value) < 1e-6:
+                if origin_value < min_value or origin_value > max_value:
+                    return None
+                continue
+
+            inv = 1.0 / ray_value
+            near = (min_value - origin_value) * inv
+            far = (max_value - origin_value) * inv
+
+            if near > far:
+                near, far = far, near
+
+            t_min = max(t_min, near)
+            t_max = min(t_max, far)
+
+            if t_min > t_max:
+                return None
+
+        if t_min < 0 or t_min > KEYPAD_INTERACT_RAY_DISTANCE:
+            return None
+
+        return t_min
+
+    def nearest_keypad_button_ray_hit(self, origin, ray):
+        nearest = None
+        nearest_t = KEYPAD_INTERACT_RAY_DISTANCE
+        render = ShowBaseGlobal.base.render
+
+        for keypad_key, keypad in self.active_keypads.items():
+            if not keypad['entity'].enabled:
+                continue
+
+            for label, button in keypad['buttons'].items():
+                bounds = button.getTightBounds(render)
+
+                if not bounds:
+                    continue
+
+                t = self.keypad_ray_box_distance(origin, ray, bounds[0], bounds[1])
+
+                if t is not None and t < nearest_t:
+                    nearest = (keypad_key, label)
+                    nearest_t = t
+
+        if nearest is None:
+            return None, None
+
+        return nearest, nearest_t
+
+    def press_keypad_button(self, keypad_key, label):
+        keypad = self.active_keypads.get(keypad_key)
+
+        if not keypad:
+            return False
+
+        print(f'keypad button pressed: {label}')
+        beep = Audio('asset/sound/keypad_beep.wav', autoplay=True, volume=0.9)
+        if label == 'enter':
+            self.set_audio_pitch(beep, 1.28)
+        button = keypad['buttons'].get(label)
+        if button:
+            button.press_timer = KEYPAD_PRESS_TIME
+
+        if label == 'enter':
+            keypad_code = self.note_keypad_code() or KEYPAD_CODE
+            blank_display = '_' * len(keypad_code)
+
+            if keypad['input'] == keypad_code:
+                keypad['pending_result_sound'] = 'success'
+                keypad['result_sound_timer'] = KEYPAD_RESULT_SOUND_DELAY
+                keypad['pending_unlock'] = True
+                keypad['input'] = ''
+                keypad['message_timer'] = 0.0
+                self.set_keypad_display_text(keypad, blank_display)
+            else:
+                keypad['pending_result_sound'] = 'fail'
+                keypad['result_sound_timer'] = KEYPAD_RESULT_SOUND_DELAY
+                keypad['pending_unlock'] = False
+                keypad['input'] = ''
+                keypad['message_timer'] = KEYPAD_DISPLAY_CLEAR_TIME
+                self.set_keypad_display_text(keypad, blank_display)
+            return True
+
+        if label.isdigit():
+            keypad_code = self.note_keypad_code() or KEYPAD_CODE
+            keypad['input'] = (keypad['input'] + label)[-len(keypad_code):]
+            keypad['message_timer'] = 0.0
+            self.set_keypad_display_text(keypad, keypad['input'])
+            return True
+
+        return False
+
+    def set_audio_pitch(self, sound, pitch):
+        for attr in ('pitch', 'play_rate', 'rate'):
+            if hasattr(sound, attr):
+                try:
+                    setattr(sound, attr, pitch)
+                    return
+                except Exception:
+                    pass
+
+        for attr in ('sound', '_sound', 'audio', '_audio'):
+            inner = getattr(sound, attr, None)
+
+            if inner and hasattr(inner, 'setPlayRate'):
+                try:
+                    inner.setPlayRate(pitch)
+                    return
+                except Exception:
+                    pass
+
+    def play_keypad_result_sound(self, result):
+        path = 'asset/sound/keypad_success.wav' if result == 'success' else 'asset/sound/keypad_fail.wav'
+
+        try:
+            Audio(path, autoplay=True, volume=1.0)
+        except Exception:
+            pass
+
+    def unlock_keypad_door(self, keypad_key):
+        door = self.active_doors.get(keypad_key)
+        keypad = self.active_keypads.get(keypad_key)
+
+        if keypad:
+            keypad['input'] = ''
+            keypad['message_timer'] = 0.0
+            self.set_keypad_display_text(keypad, '')
+
+        if not door:
+            return
+
+        self.door_lock_states[keypad_key] = False
+        door['locked'] = False
+        door['pending_open'] = False
+        door['unlock_open_timer'] = 0.0
+        self.door_states[keypad_key] = True
+        door['target'] = 1.0
+
+        self.door_open_sound.stop()
+        self.door_open_sound.play(start=0.3)
+
+    def update_keypads(self):
+        for keypad in self.active_keypads.values():
+            if keypad.get('pending_result_sound') and keypad.get('result_sound_timer', 0.0) > 0.0:
+                keypad['result_sound_timer'] = max(0.0, keypad['result_sound_timer'] - time.dt)
+
+                if keypad['result_sound_timer'] <= 0.0:
+                    self.play_keypad_result_sound(keypad['pending_result_sound'])
+                    if keypad.get('pending_unlock'):
+                        self.unlock_keypad_door(keypad['door_key'])
+                        keypad['pending_unlock'] = False
+                    keypad['pending_result_sound'] = None
+
+            if keypad.get('message_timer', 0.0) > 0.0:
+                keypad['message_timer'] = max(0.0, keypad['message_timer'] - time.dt)
+
+                if keypad['message_timer'] <= 0.0:
+                    self.set_keypad_display_text(keypad, keypad['input'])
+
+            for button in keypad['buttons'].values():
+                timer = max(0.0, getattr(button, 'press_timer', 0.0) - time.dt)
+                button.press_timer = timer
+                progress = 1.0 - (timer / KEYPAD_PRESS_TIME if KEYPAD_PRESS_TIME > 0 else 1.0)
+                press = math.sin(progress * math.pi) * KEYPAD_PRESS_DEPTH if timer > 0.0 else 0.0
+                base_x, base_y, base_z = button.base_position
+                button.position = (base_x, base_y, base_z - press)
+                label = getattr(button, 'debug_label', None)
+                if label:
+                    label.position = (base_x, base_y, base_z - press + 0.025)
 
     def nearest_interactable_door_key(self):
         nearest_key = None
@@ -615,12 +1097,20 @@ class DoorMixin(BedMixin, DrawerMixin):
                 nearest_t = t
 
         origin, ray = self.camera_interaction_ray()
+        keypad_button, keypad_t = self.nearest_keypad_button_ray_hit(origin, ray)
         key_key, key_t = self.nearest_key_ray_hit(origin, ray)
+        note_key, note_t = self.nearest_note_ray_hit(origin, ray)
         drawer_key, drawer_t = self.nearest_drawer_ray_hit(origin, ray)
 
-        if key_key is not None and key_t is not None and key_t < nearest_t:
+        if keypad_button is not None and keypad_t is not None:
+            nearest = ('keypad', keypad_button)
+            nearest_t = keypad_t
+        elif key_key is not None and key_t is not None and key_t < nearest_t:
             nearest = ('key', key_key)
             nearest_t = key_t
+        elif note_key is not None and note_t is not None and note_t < nearest_t:
+            nearest = ('note', note_key)
+            nearest_t = note_t
         elif drawer_key is not None and drawer_t is not None and drawer_t < nearest_t:
             nearest = ('drawer', drawer_key)
             nearest_t = drawer_t
@@ -655,10 +1145,14 @@ class DoorMixin(BedMixin, DrawerMixin):
         is_open = self.door_states.get(key, False)
 
         if door.get('locked') and not is_open:
+            if key == self.exit_sign_door_key:
+                door['rattle_timer'] = DOOR_RATTLE_DURATION
+                Audio('asset/sound/door_rattle.wav', autoplay=True, volume=1.0)
+                return False
+
             if not self.consume_key():
                 door['rattle_timer'] = DOOR_RATTLE_DURATION
-                self.door_rattle_sound.stop()
-                self.door_rattle_sound.play()
+                Audio('asset/sound/door_rattle.wav', autoplay=True, volume=1.0)
                 return False
 
             self.door_lock_states[key] = False
@@ -696,9 +1190,18 @@ class DoorMixin(BedMixin, DrawerMixin):
         if kind == 'key':
             return self.pickup_key(key)
 
+        if kind == 'note':
+            return self.pickup_note(key)
+
+        if kind == 'keypad':
+            keypad_key, label = key
+            return self.press_keypad_button(keypad_key, label)
+
         return self.toggle_drawer(key)
 
     def update_doors(self):
+        self.update_keypads()
+
         for key, door in list(self.active_doors.items()):
             if door.get('pending_open'):
                 door['unlock_open_timer'] = max(0.0, door.get('unlock_open_timer', 0.0) - time.dt)

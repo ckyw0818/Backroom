@@ -1,5 +1,5 @@
 import random
-from math import atan2, degrees, sin, sqrt
+from math import atan2, cos, degrees, pi, sin, sqrt
 
 from panda3d.core import PNMImage, Texture as PandaTexture
 from ursina import Audio, Entity, Mesh, Shader, Texture, Vec2, camera, color, time
@@ -15,6 +15,7 @@ MINIMAP_INNER = 0.88
 
 SCAN_RADIUS_CELLS = 14
 SCAN_PULSE_TIME = 0.8
+SCAN_COOLDOWN_TIME = 5.0
 MONSTER_PULSE_TIME = 0.65
 
 PLAYER_TRI_W = 0.017
@@ -146,6 +147,7 @@ class Minimap:
         self.scan_origin = (0, 0)
         self.scan_wave = 0.0
         self.scan_max = 0.0
+        self.scan_cooldown = 0.0
         self.pending_monster_pulse_dists = [None for _ in self.monsters]
         self.pending_monster_warn_indices = [None for _ in self.monsters]
 
@@ -181,6 +183,13 @@ class Minimap:
             color=rgba(172, 148, 48, 65),
             position=(0, 0, 0.156),
             scale=MINIMAP_SIZE * 1.02,
+        )
+
+        self.cooldown_rim = Entity(
+            parent=self.root,
+            model=Mesh(vertices=[], triangles=[], colors=[], mode='triangle', static=False),
+            position=(0, 0, 0.152),
+            enabled=False,
         )
 
         self.bg = Entity(
@@ -438,8 +447,12 @@ class Minimap:
         sound.play()
 
     def scan(self):
+        if self.scan_cooldown > 0.0:
+            return False
+
         pr, pc = self.player_cell()
 
+        self.scan_cooldown = SCAN_COOLDOWN_TIME
         self.scan_origin = (pr, pc)
         self.scan_wave = 0.0
         self.scan_max = SCAN_RADIUS_CELLS
@@ -468,7 +481,53 @@ class Minimap:
                 self.pending_monster_warn_indices[i] = warn_index
                 self.update_monster_dot(i)
 
+        return True
+
+    def update_scan_cooldown(self):
+        if self.scan_cooldown > 0.0:
+            self.scan_cooldown = max(0.0, self.scan_cooldown - time.dt)
+
+        progress = self.scan_cooldown / max(0.001, SCAN_COOLDOWN_TIME)
+        if progress <= 0.0:
+            self.cooldown_rim.enabled = False
+            self.rim.color = rgba(188, 166, 65, 95)
+            return
+
+        self.cooldown_rim.enabled = True
+        self.rim.color = rgba(188, 166, 65, 95)
+        self.cooldown_rim.model = self.cooldown_ring_mesh(progress)
+
+    def cooldown_ring_mesh(self, progress):
+        segments = max(4, int(64 * progress))
+        outer = MINIMAP_SIZE * 0.535
+        inner = MINIMAP_SIZE * 0.500
+        start = pi * 0.5
+        sweep = -2.0 * pi * progress
+        vertices = []
+        triangles = []
+        colors = []
+
+        for i in range(segments + 1):
+            t = start + sweep * (i / max(1, segments))
+            ox = cos(t) * outer
+            oy = sin(t) * outer
+            ix = cos(t) * inner
+            iy = sin(t) * inner
+            vertices.append((ox, oy, 0.0))
+            vertices.append((ix, iy, 0.0))
+            alpha = int(170 * (0.35 + 0.65 * progress))
+            colors.extend((rgba(230, 196, 74, alpha), rgba(230, 196, 74, alpha)))
+
+            if i < segments:
+                j = i * 2
+                triangles.append((j, j + 1, j + 2))
+                triangles.append((j + 1, j + 3, j + 2))
+
+        return Mesh(vertices=vertices, triangles=triangles, colors=colors, mode='triangle', static=False)
+
     def update_scan_wave(self):
+        self.update_scan_cooldown()
+
         if not self.scanning:
             self.scan_pulse.enabled = False
             return
@@ -631,6 +690,8 @@ class Minimap:
             y += gy
             flicker = 0.35 + 0.65 * abs(sin(time.time() * (18.0 + self.glitch_amount * 28.0) + i))
             dot.color = rgba(255, 35, 35, int(255 * (1.0 - self.glitch_amount * 0.45) * flicker))
+        else:
+            dot.color = rgba(255, 35, 35, 255)
 
         dot.position = (x, y, -0.06)
         pulse.position = (x, y, -0.07)
@@ -643,9 +704,11 @@ class Minimap:
         self.monster_pulse_ts = [MONSTER_PULSE_TIME for _ in self.monsters]
 
         for dot in self.monster_dots:
+            dot.color = rgba(255, 35, 35, 255)
             dot.enabled = False
 
         for pulse in self.monster_pulses:
+            pulse.color = rgba(255, 35, 35, 0)
             pulse.enabled = False
 
     def update_player_marker(self):

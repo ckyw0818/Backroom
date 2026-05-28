@@ -1,3 +1,4 @@
+import math
 import random
 
 from ursina import *
@@ -13,6 +14,7 @@ from panda3d.core import AmbientLight as Panda3dAmbientLight, Point2
 
 from character.monster import MonsterAI
 from character.player_controller import CAMERA_FOV, RUN_SPEED, HeadBob, create_player
+from furniture.door import DOOR_DENSITY, DOOR_FACE_SALTS
 from map.game_map import MapRenderer
 from map.light import LightSystem
 from map.map_data import CELL, LAYOUT, START_ROOM_CELL, WALL_H
@@ -35,6 +37,7 @@ CROSSHAIR_DOOR_SIZE = 0.017
 CROSSHAIR_SMOOTHING = 14.0
 NOISE_SONAR_STRENGTH = 1.0
 NOISE_DOOR_STRENGTH = 0.7
+NOISE_DRAWER_STRENGTH = 0.45
 NOISE_FOOTSTEP_STRENGTH = 0.3
 JUMPSCARE_SCREEN_PAD = 0.08
 JUMPSCARE_PLAY_TIME = 3
@@ -46,9 +49,12 @@ DEATH_DISTANCE = CELL * 0.2
 DEATH_BLACK_TIME = 3.5
 RESPAWN_FADE_TIME = 1.0
 RESPAWN_YAW = -90
+MAX_PLAYER_HEARTS = 3
+DEATH_HEART_ANIM_TIME = 1.0
+DEATH_GAME_OVER_DELAY = 0.45
 VENT_VOLUME = 0.60
 MONSTER_SPAWN_COUNT = 4
-MONSTER_SPAWN_MIN_DISTANCE = 28
+MONSTER_SPAWN_MIN_DISTANCE = 12
 MONSTER_SPAWN_MIN_SEPARATION = 8
 
 
@@ -59,6 +65,16 @@ def rgba(r, g, b, a):
 def smoothstep01(value):
     value = max(0.0, min(1.0, value))
     return value * value * (3.0 - 2.0 * value)
+
+
+def lerp_color(start, end, amount):
+    amount = smoothstep01(amount)
+    return rgba(
+        int(start[0] + (end[0] - start[0]) * amount),
+        int(start[1] + (end[1] - start[1]) * amount),
+        int(start[2] + (end[2] - start[2]) * amount),
+        int(start[3] + (end[3] - start[3]) * amount),
+    )
 
 
 def set_audio_rate(sound, rate):
@@ -189,8 +205,13 @@ def set_death_overlay_alpha(alpha):
     death_overlay.color = rgba(0, 0, 0, int(255 * alpha))
 
 
+def set_death_screen_visible(visible):
+    if death_screen:
+        death_screen.set_visible(visible)
+
+
 def reset_player_to_start():
-    player.position = (START_ROOM_CELL[1] * CELL, 0, START_ROOM_CELL[0] * CELL)
+    player.position = (START_ROOM_CELL_RUNTIME[1] * CELL, 0, START_ROOM_CELL_RUNTIME[0] * CELL)
     player.rotation_y = RESPAWN_YAW
     player.speed = 0
     player.camera_pivot.x = 0
@@ -218,8 +239,9 @@ def reset_run_after_death():
     reset_player_to_start()
     map_renderer.reset_start_room_lock_and_key()
 
-    for monster in monsters:
-        monster.reset_to_spawn()
+    for monster, spawn_cell in zip(monsters, pick_monster_spawn_cells(len(monsters))):
+        monster.reset_to_cell(spawn_cell)
+        monster.silence_all_sounds()
 
     minimap.reset_monster_fixes()
     minimap_visible = False
@@ -228,15 +250,18 @@ def reset_run_after_death():
 
 
 def start_death_sequence():
-    global death_state, death_timer
+    global death_state, death_timer, death_lost_heart_index, player_hearts
 
     if death_state != 'alive':
         return
 
+    player_hearts = max(0, player_hearts - 1)
+    death_lost_heart_index = MAX_PLAYER_HEARTS - player_hearts - 1
     death_state = 'black'
     death_timer = DEATH_BLACK_TIME
     player.speed = 0
     vent_ambience.stop()
+    fade_monster_sounds(1.0)
     set_death_overlay_alpha(1.0)
 
 
@@ -246,9 +271,9 @@ def fade_monster_sounds(amount):
     jumpscare_sound.volume = JUMPSCARE_MAX_VOLUME * volume
 
     for monster in monsters:
-        for sound in monster.sounds.values():
-            if sound:
-                sound.volume = volume
+        monster.set_sound_volume_scale(volume)
+        if volume <= 0.0:
+            monster.silence_all_sounds()
 
 
 def update_death_sequence():
@@ -258,19 +283,43 @@ def update_death_sequence():
         return False
 
     player.speed = 0
+
+    if death_state == 'game_over':
+        death_timer += time.dt
+        set_death_overlay_alpha(1.0)
+        fade_monster_sounds(0.0)
+        death_screen.update(
+            player_hearts,
+            death_lost_heart_index,
+            1.0,
+            show_game_over=True,
+            game_over_progress=min(1.0, death_timer / 0.65),
+        )
+        return True
+
     death_timer -= time.dt
 
     if death_state == 'black':
         set_death_overlay_alpha(1.0)
         fade_monster_sounds(death_timer / DEATH_BLACK_TIME)
+        black_elapsed = DEATH_BLACK_TIME - death_timer
+        heart_progress = min(1.0, black_elapsed / DEATH_HEART_ANIM_TIME)
+        death_screen.update(player_hearts, death_lost_heart_index, heart_progress)
+
+        if player_hearts <= 0 and black_elapsed >= DEATH_HEART_ANIM_TIME + DEATH_GAME_OVER_DELAY:
+            death_state = 'game_over'
+            death_timer = 0.0
+            return True
 
         if death_timer <= 0.0:
+            set_death_screen_visible(False)
             reset_run_after_death()
             death_state = 'fade_in'
             death_timer = RESPAWN_FADE_TIME
         return True
 
     if death_state == 'fade_in':
+        set_death_screen_visible(False)
         alpha = max(0.0, death_timer / RESPAWN_FADE_TIME)
         set_death_overlay_alpha(alpha)
         vent_ambience.volume = VENT_VOLUME * (1.0 - alpha)
@@ -279,6 +328,7 @@ def update_death_sequence():
             death_state = 'alive'
             death_timer = 0.0
             vent_ambience.volume = VENT_VOLUME
+            fade_monster_sounds(1.0)
             set_death_overlay_alpha(0.0)
         return True
 
@@ -286,6 +336,9 @@ def update_death_sequence():
 
 
 def update_player_caught():
+    if map_renderer.closed_door_for_room_cell(map_renderer.player_cell())[0] is not None:
+        return
+
     for monster in monsters:
         if monster.distance_to_player() <= DEATH_DISTANCE:
             start_death_sequence()
@@ -307,15 +360,56 @@ def cell_grid_distance(a, b):
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
 
+def door_room_for_face(r, c, face):
+    if face == 'north':
+        return r - 1, c
+    if face == 'south':
+        return r + 1, c
+    if face == 'west':
+        return r, c - 1
+    return r, c + 1
+
+
+def random_start_room_cell():
+    candidates = []
+
+    for r, row in enumerate(LAYOUT):
+        for c, value in enumerate(row):
+            if value != 0:
+                continue
+
+            for face in ('north', 'south', 'west', 'east'):
+                if (r * 17 + c * 31 + DOOR_FACE_SALTS[face]) % DOOR_DENSITY != 0:
+                    continue
+
+                room_cell = door_room_for_face(r, c, face)
+                rr, rc = room_cell
+
+                if (
+                    0 <= rr < len(LAYOUT)
+                    and 0 <= rc < len(LAYOUT[0])
+                    and LAYOUT[rr][rc] == 1
+                ):
+                    candidates.append(room_cell)
+
+    return random.choice(candidates) if candidates else START_ROOM_CELL
+
+
 def pick_monster_spawn_cells(count):
-    candidates = [
+    base_candidates = [
         (r, c)
         for r, row in enumerate(LAYOUT)
         for c, value in enumerate(row)
         if value == 0
         and cell_open_neighbor_count((r, c)) >= 3
-        and cell_grid_distance((r, c), START_ROOM_CELL) >= MONSTER_SPAWN_MIN_DISTANCE
     ]
+    candidates = [
+        cell
+        for cell in base_candidates
+        if cell_grid_distance(cell, START_ROOM_CELL_RUNTIME) >= MONSTER_SPAWN_MIN_DISTANCE
+    ]
+    if not candidates:
+        candidates = base_candidates[:]
     random.shuffle(candidates)
 
     picked = []
@@ -326,7 +420,8 @@ def pick_monster_spawn_cells(count):
             if len(picked) >= count:
                 return picked
 
-    return picked + candidates[:max(0, count - len(picked))]
+    remaining = [cell for cell in candidates if cell not in picked]
+    return picked + remaining[:max(0, count - len(picked))]
 
 
 class DoorCrosshair:
@@ -364,6 +459,70 @@ class DoorCrosshair:
         self.outer.color = rgba(255, 236, 165, 175 if door_ready else 115)
 
 
+class DeathScreen:
+    HEART_TEXT = '♥'
+    HEART_FULL = (215, 24, 48, 255)
+    HEART_LOST = (38, 38, 38, 255)
+
+    def __init__(self):
+        self.root = Entity(parent=camera.ui, enabled=False)
+        self.hearts = []
+
+        for index, x in enumerate((-0.18, 0.0, 0.18)):
+            heart = Text(
+                parent=self.root,
+                text=self.HEART_TEXT,
+                origin=(0, 0),
+                position=(x, 0.03, -1.2),
+                scale=4.2,
+                color=rgba(*self.HEART_FULL),
+            )
+            heart.always_on_top = True
+            self.hearts.append(heart)
+
+        self.game_over = Text(
+            parent=self.root,
+            text='GAME OVER',
+            origin=(0, 0),
+            position=(0, -0.16, -1.2),
+            scale=2.1,
+            color=rgba(230, 230, 230, 0),
+            enabled=False,
+        )
+        self.game_over.always_on_top = True
+
+    def set_visible(self, visible):
+        self.root.enabled = visible
+
+    def update(
+        self,
+        lives,
+        lost_index=None,
+        anim_progress=1.0,
+        show_game_over=False,
+        game_over_progress=1.0,
+    ):
+        self.set_visible(True)
+
+        for index, heart in enumerate(self.hearts):
+            lost = index < MAX_PLAYER_HEARTS - lives
+            heart.scale = 4.2
+
+            if lost_index == index:
+                heart.color = lerp_color(self.HEART_FULL, self.HEART_LOST, anim_progress)
+                pulse = 1.0 + 0.18 * math.sin(min(1.0, anim_progress) * math.pi)
+                heart.scale = 4.2 * pulse
+            elif lost:
+                heart.color = rgba(*self.HEART_LOST)
+            else:
+                heart.color = rgba(*self.HEART_FULL)
+
+        self.game_over.enabled = show_game_over
+        if show_game_over:
+            fade = min(1.0, max(0.0, game_over_progress))
+            self.game_over.color = rgba(230, 230, 230, int(255 * fade))
+
+
 app = Ursina(title='The Backrooms', size=(1280, 720))
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 application.asset_folder = PROJECT_DIR
@@ -387,13 +546,14 @@ scene.fog_density = 0
 
 textures = load_environment_textures()
 light_system = LightSystem(LAYOUT, CELL, WALL_H)
-player = create_player(CELL, *START_ROOM_CELL, spawn_yaw=-90)
+START_ROOM_CELL_RUNTIME = random_start_room_cell()
+player = create_player(CELL, *START_ROOM_CELL_RUNTIME, spawn_yaw=-90)
 footstep_sounds = [
     Audio(f'asset/sound/foot{i}.wav', autoplay=False, volume=0.60)
     for i in range(1, 4)
 ]
 head_bob = HeadBob(player, footstep_sounds, lambda: emit_noise(NOISE_FOOTSTEP_STRENGTH))
-map_renderer = MapRenderer(player, light_system, textures)
+map_renderer = MapRenderer(player, light_system, textures, START_ROOM_CELL_RUNTIME)
 monster_textures = [
     'asset/texture/obunga.png',
     'asset/texture/obunga2.png',
@@ -409,10 +569,12 @@ monsters = [
         PROJECT_DIR,
         spawn_cell=spawn_cell,
         texture=texture,
-        chase_speed=RUN_SPEED * 3.5,
+        chase_speed=RUN_SPEED * 8,
     )
     for texture, spawn_cell in monster_specs
 ]
+for monster in monsters:
+    monster.set_door_system(map_renderer, MONSTER_SPAWN_MIN_DISTANCE)
 post_effects = PostEffects()
 
 minimap = Minimap(
@@ -421,7 +583,6 @@ minimap = Minimap(
     player,
     monsters,
     map_renderer._cell_door_rooms,
-    highlighted_room_cells=map_renderer.exit_room_cells,
     enabled=MINIMAP_ENABLED,
 )
 crosshair = DoorCrosshair()
@@ -434,8 +595,11 @@ death_overlay = Entity(
     enabled=False,
 )
 death_overlay.always_on_top = True
+death_screen = DeathScreen()
 death_state = 'alive'
 death_timer = 0.0
+player_hearts = MAX_PLAYER_HEARTS
+death_lost_heart_index = None
 
 _amb = Panda3dAmbientLight('ambient')
 _amb.setColor((0.0, 0.0, 0.0, 1.0))
@@ -468,6 +632,8 @@ def update():
     global heartbeat_rate, minimap_scan_was_down, minimap_tab_was_down, minimap_visible
 
     if update_death_sequence():
+        if held_keys['escape']:
+            application.quit()
         return
 
     map_renderer.update_rendered_scene()
@@ -486,9 +652,9 @@ def update():
 
     minimap_scan_down = held_keys['r']
     if minimap_scan_down and not minimap_scan_was_down:
-        sonar_sound.play()
-        minimap.scan()
         emit_noise(NOISE_SONAR_STRENGTH)
+        if minimap.scan():
+            sonar_sound.play()
     minimap_scan_was_down = minimap_scan_down
 
     minimap_tab_down = held_keys['tab']
@@ -530,8 +696,11 @@ def update():
 def input(key):
     if key == 'e':
         interaction = map_renderer.nearest_interaction()
-        if map_renderer.interact_nearest() and interaction and interaction[0] == 'door':
-            emit_noise(NOISE_DOOR_STRENGTH)
+        if map_renderer.interact_nearest() and interaction:
+            if interaction[0] == 'door':
+                emit_noise(NOISE_DOOR_STRENGTH)
+            elif interaction[0] == 'drawer':
+                emit_noise(NOISE_DRAWER_STRENGTH)
 
 
 app.run()

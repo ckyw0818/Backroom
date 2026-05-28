@@ -8,7 +8,7 @@ from map.map_data import CELL
 from character.player_controller import RUN_SPEED   
 
 
-MONSTER_STATES = ('idle', 'wander', 'investigate', 'alert', 'chase')
+MONSTER_STATES = ('idle', 'wander', 'investigate', 'alert', 'chase', 'door_stalk')
 STATE_SOUND_FILES = {
     'idle': 'monster_idle.wav',
     'wander': 'monster_wander.wav',
@@ -28,9 +28,19 @@ MONSTER_DECEL = 7.5
 MONSTER_TURN_SPEED = 8.0
 MONSTER_WAYPOINT_REACH_DIST = 0.22
 DIRECT_CHASE_SPEED_MULT = 1.18
+DOOR_STALK_TRIGGER_DISTANCE = CELL * 2
+DOOR_STALK_WAIT_TIME = 3.0
+DOOR_STALK_DOOR_REACH_DIST = CELL * 0.56
+DOOR_STALK_RETREAT_TIME = 3.0
+ROAR_SOUND_MIN_DISTANCE = 2.0
+ROAR_SOUND_MAX_DISTANCE = CELL * 6
+ROAR_SOUND_MIN_VOLUME = 0.20
+ROAR_SOUND_MAX_VOLUME = 1.00
+NOISE_DOOR_BREACH_REACH_DIST = DOOR_STALK_DOOR_REACH_DIST
 
 MONSTER_WANDER_SPEED = RUN_SPEED * 0.4
 MONSTER_INVESTIGATE_SPEED = RUN_SPEED * 0.7
+MONSTER_DOOR_STALK_SPEED = RUN_SPEED * 0.75
 
 MONSTER_COLLISION_RADIUS = 0.48
 
@@ -64,6 +74,15 @@ class MonsterAI:
         self.target_cell = None
         self.investigate_cell = None
         self.chase_sound_active = False
+        self.roar_sound_active = False
+        self.sound_volume_scale = 1.0
+        self.door_system = None
+        self.respawn_min_distance_from_start = 28
+        self.door_stalk_key = None
+        self.door_stalk_door = None
+        self.door_stalk_phase = None
+        self.door_stalk_timer = 0.0
+        self.door_stalk_noise_heard = False
         self.jumpscare_seen_this_chase = False
         self.texture = texture
         self.chase_speed = chase_speed
@@ -89,9 +108,31 @@ class MonsterAI:
 
         self.set_state('idle')
 
+    def set_door_system(self, door_system, respawn_min_distance_from_start=28):
+        self.door_system = door_system
+        self.respawn_min_distance_from_start = respawn_min_distance_from_start
+
+    def set_sound_volume_scale(self, scale):
+        self.sound_volume_scale = max(0.0, min(1.0, scale))
+
+        if self.sound_volume_scale <= 0.02:
+            self.stop_chase_sound()
+            self.stop_roar_sound()
+            return
+
+        if self.chase_sound_active and self.sounds.get('chase'):
+            self.sounds['chase'].volume = self.chase_sound_volume()
+
+        if self.roar_sound_active and self.sounds.get('roar'):
+            self.sounds['roar'].volume = self.roar_sound_volume()
+
     def reset_to_spawn(self):
+        self.reset_to_cell(self.spawn_cell)
+
+    def reset_to_cell(self, cell, state='idle'):
         self.stop_chase_sound()
-        x, z = self.cell_center(self.spawn_cell)
+        self.stop_roar_sound()
+        x, z = self.cell_center(cell)
         self.entity.position = (x, 1.05, z)
         self.velocity_x = 0.0
         self.velocity_z = 0.0
@@ -99,8 +140,13 @@ class MonsterAI:
         self.path_timer = 0.0
         self.target_cell = None
         self.investigate_cell = None
+        self.door_stalk_key = None
+        self.door_stalk_door = None
+        self.door_stalk_phase = None
+        self.door_stalk_timer = 0.0
+        self.door_stalk_noise_heard = False
         self.jumpscare_seen_this_chase = False
-        self.set_state('idle')
+        self.set_state(state)
 
     def load_sounds(self, project_dir):
         sound_dir = Path(project_dir) / 'asset' / 'sound'
@@ -119,6 +165,12 @@ class MonsterAI:
                 volume=CHASE_SOUND_MAX_VOLUME if state == 'chase' else 0.55,
             )
 
+        for roar_filename in ('roar.wav', 'roar.mp3'):
+            roar_path = sound_dir / roar_filename
+            if roar_path.exists():
+                sounds['roar'] = Audio(f'asset/sound/{roar_filename}', autoplay=False, loop=True, volume=0.0)
+                break
+
         return sounds
 
     def set_state(self, state):
@@ -131,6 +183,8 @@ class MonsterAI:
 
         if previous == 'chase' and state != 'chase':
             self.stop_chase_sound()
+        if previous == 'door_stalk' and state != 'door_stalk':
+            self.stop_roar_sound()
 
         sound = self.sounds.get(state)
 
@@ -139,6 +193,7 @@ class MonsterAI:
             self.start_chase_sound()
         elif sound:
             sound.stop()
+            sound.volume = 0.55 * self.sound_volume_scale
             sound.play()
 
     def chase_sound_volume(self):
@@ -152,7 +207,8 @@ class MonsterAI:
         t = max(0.0, min(1.0, t))
         t = t * t * (3.0 - 2.0 * t)
 
-        return CHASE_SOUND_MIN_VOLUME + (CHASE_SOUND_MAX_VOLUME - CHASE_SOUND_MIN_VOLUME) * t
+        volume = CHASE_SOUND_MIN_VOLUME + (CHASE_SOUND_MAX_VOLUME - CHASE_SOUND_MIN_VOLUME) * t
+        return volume * self.sound_volume_scale
 
     def start_chase_sound(self):
         if 'chase' not in self.sounds:
@@ -181,6 +237,7 @@ class MonsterAI:
             return
 
         sound.stop()
+        sound.volume = 0.0
         self.chase_sound_active = False
 
     def update_chase_sound(self):
@@ -199,6 +256,80 @@ class MonsterAI:
         if not self.chase_sound_active:
             self.start_chase_sound()
 
+    def roar_sound_volume(self):
+        if self.sound_volume_scale <= 0.02:
+            return 0.0
+
+        dist = self.distance_to_player()
+        t = 1.0 - (
+            (dist - ROAR_SOUND_MIN_DISTANCE)
+            / (ROAR_SOUND_MAX_DISTANCE - ROAR_SOUND_MIN_DISTANCE)
+        )
+        t = max(0.0, min(1.0, t))
+        t = t * t * (3.0 - 2.0 * t)
+
+        return max(ROAR_SOUND_MIN_VOLUME, ROAR_SOUND_MAX_VOLUME * t) * self.sound_volume_scale
+
+    def start_roar_sound(self):
+        if 'roar' not in self.sounds:
+            return
+
+        old_sound = self.sounds.get('roar')
+        if old_sound:
+            old_sound.volume = 0.0
+            old_sound.stop()
+
+        sound = Audio(
+            'asset/sound/roar.wav',
+            autoplay=False,
+            loop=True,
+            volume=self.roar_sound_volume(),
+        )
+
+        self.sounds['roar'] = sound
+        sound.volume = self.roar_sound_volume()
+        sound.play()
+        self.roar_sound_active = True
+
+    def stop_roar_sound(self):
+        sound = self.sounds.get('roar')
+
+        if sound:
+            sound.volume = 0.0
+            sound.stop()
+
+        self.roar_sound_active = False
+
+    def stop_all_looping_sounds(self):
+        self.stop_chase_sound()
+        self.stop_roar_sound()
+
+    def silence_all_sounds(self):
+        for sound in self.sounds.values():
+            if not sound:
+                continue
+            sound.volume = 0.0
+            sound.stop()
+
+        self.chase_sound_active = False
+        self.roar_sound_active = False
+
+    def update_roar_sound(self):
+        sound = self.sounds.get('roar')
+
+        if not sound:
+            return
+
+        if self.state != 'door_stalk':
+            if self.roar_sound_active:
+                self.stop_roar_sound()
+            return
+
+        sound.volume = self.roar_sound_volume()
+
+        if not self.roar_sound_active:
+            self.start_roar_sound()
+
     def cell_from_world(self, x, z):
         return (
             int((z + self.cell / 2) // self.cell),
@@ -211,6 +342,18 @@ class MonsterAI:
 
     def player_cell(self):
         return self.cell_from_world(self.player.x, self.player.z)
+
+    def player_closed_room_door(self):
+        if not self.door_system:
+            return None, None
+
+        player_cell = self.player_cell()
+        key, door = self.door_system.closed_door_for_room_cell(player_cell)
+        return key, door
+
+    def player_hidden_behind_closed_door(self):
+        key, door = self.player_closed_room_door()
+        return key is not None and door is not None
 
     def reachable_player_cell(self):
         cell = self.player_cell()
@@ -251,7 +394,10 @@ class MonsterAI:
             for c in range(min_c, max_c + 1):
                 if r < 0 or r >= self.rows or c < 0 or c >= self.cols:
                     return False
-                if self.layout[r][c] == 1:
+                if (
+                    self.layout[r][c] == 1
+                    and not ((r, c) == self.player_cell() and not self.player_hidden_behind_closed_door())
+                ):
                     return False
 
         return True
@@ -271,6 +417,9 @@ class MonsterAI:
         return (dx * dx + dz * dz) ** 0.5
 
     def has_line_of_sight_to_player(self):
+        if self.player_hidden_behind_closed_door():
+            return False
+
         dx = self.player.x - self.entity.x
         dz = self.player.z - self.entity.z
         dist = max((dx * dx + dz * dz) ** 0.5, 0.001)
@@ -282,13 +431,13 @@ class MonsterAI:
             z = self.entity.z + dz * t
             cell = self.cell_from_world(x, z)
 
-            if cell == self.player_cell():
-                return True
-
             r, c = cell
 
             if r < 0 or r >= self.rows or c < 0 or c >= self.cols:
                 return False
+
+            if cell == self.player_cell():
+                return True
 
             if self.layout[r][c] == 1:
                 return False
@@ -428,6 +577,9 @@ class MonsterAI:
         self.path = self.find_path(self.monster_cell(), goal_cell)
 
     def investigate_noise(self, cell, strength=1.0):
+        if self.handle_closed_room_noise(cell, strength):
+            return
+
         if cell not in self.walkable:
             return
 
@@ -444,13 +596,185 @@ class MonsterAI:
         self.path = []
         self.path_timer = 0.0
 
-        if self.state != 'chase':
+        if self.state not in ('chase', 'door_stalk'):
             self.set_state('investigate')
+
+    def noise_reaches_monster(self, cell, strength):
+        if cell not in self.walkable:
+            return False
+
+        strength = max(0.0, min(1.0, strength))
+        if strength <= 0.0:
+            return False
+
+        max_dist = NOISE_ATTRACT_RADIUS_CELLS * strength
+        return self.grid_distance(self.monster_cell(), cell) <= max_dist
+
+    def handle_closed_room_noise(self, cell, strength):
+        if not self.noise_reaches_monster(cell, strength):
+            return False
+
+        key, door = self.player_closed_room_door()
+        if key is None or door is None:
+            return False
+
+        if self.state != 'door_stalk' or self.door_stalk_key != key:
+            return False
+
+        self.door_stalk_noise_heard = True
+        return True
+
+    def begin_door_stalk(self, key, door):
+        self.door_stalk_key = key
+        self.door_stalk_door = door
+        self.door_stalk_phase = 'approach'
+        self.door_stalk_timer = 0.0
+        self.door_stalk_noise_heard = False
+        self.target_cell = (key[0], key[1])
+        self.path = []
+        self.path_timer = 0.0
+        self.set_state('door_stalk')
+        self.start_roar_sound()
+
+    def breach_stalked_door(self):
+        self.stop_roar_sound()
+
+        if self.door_system and self.door_stalk_key is not None:
+            self.door_system.open_door_by_key(self.door_stalk_key)
+
+        self.door_stalk_key = None
+        self.door_stalk_door = None
+        self.door_stalk_phase = None
+        self.door_stalk_timer = 0.0
+        self.door_stalk_noise_heard = False
+        self.path = []
+        self.path_timer = 0.0
+        self.set_state('chase')
+
+    def reached_stalked_door(self, door_dist):
+        if door_dist <= NOISE_DOOR_BREACH_REACH_DIST:
+            return True
+
+        if self.door_stalk_key and self.monster_cell() == (self.door_stalk_key[0], self.door_stalk_key[1]):
+            return True
+
+        return False
+
+    def teleport_far_from_start(self):
+        start_room_cell = getattr(self.door_system, 'start_room_cell', self.player_cell())
+        candidates = [
+            cell for cell in self.walkable
+            if self.grid_distance(cell, start_room_cell) >= self.respawn_min_distance_from_start
+        ]
+
+        if not candidates:
+            candidates = list(self.walkable)
+
+        cell = random.choice(candidates)
+        x, z = self.cell_center(cell)
+        self.entity.position = (x, 1.05, z)
+        self.velocity_x = 0.0
+        self.velocity_z = 0.0
+        self.path = []
+        self.path_timer = 0.0
+        self.target_cell = None
+        self.investigate_cell = None
+        self.door_stalk_key = None
+        self.door_stalk_door = None
+        self.door_stalk_phase = None
+        self.door_stalk_timer = 0.0
+        self.door_stalk_noise_heard = False
+        self.set_state('wander')
+
+    def pick_retreat_target(self):
+        start = self.monster_cell()
+        player_cell = self.player_cell()
+        candidates = [
+            cell for cell in self.walkable
+            if 4 <= self.grid_distance(start, cell) <= 12
+        ]
+
+        if not candidates:
+            return self.pick_wander_target()
+
+        candidates.sort(key=lambda cell: self.grid_distance(cell, player_cell), reverse=True)
+        return random.choice(candidates[:max(1, min(6, len(candidates)))])
+
+    def update_door_stalk(self):
+        if not self.door_stalk_key or not self.door_stalk_door:
+            self.set_state('wander')
+            return
+
+        if self.door_system and self.door_system.door_states.get(self.door_stalk_key, False):
+            self.breach_stalked_door()
+            return
+
+        door_x, _, door_z = self.door_stalk_door['position']
+        dx = door_x - self.entity.x
+        dz = door_z - self.entity.z
+        door_dist = (dx * dx + dz * dz) ** 0.5
+
+        if self.door_stalk_noise_heard and self.door_stalk_phase != 'breach':
+            self.door_stalk_phase = 'breach'
+            self.door_stalk_timer = 0.0
+            self.target_cell = (self.door_stalk_key[0], self.door_stalk_key[1])
+            self.path = []
+            self.path_timer = 0.0
+
+        if self.door_stalk_phase == 'approach':
+            self.update_path((self.door_stalk_key[0], self.door_stalk_key[1]), 0.25)
+            self.move_along_path(MONSTER_DOOR_STALK_SPEED)
+
+            if door_dist <= DOOR_STALK_DOOR_REACH_DIST:
+                self.door_stalk_phase = 'wait'
+                self.door_stalk_timer = DOOR_STALK_WAIT_TIME
+                self.apply_movement(0.0, 0.0, 0.0)
+            return
+
+        if self.door_stalk_phase == 'wait':
+            self.door_stalk_timer = max(0.0, self.door_stalk_timer - time.dt)
+            self.apply_movement(0.0, 0.0, 0.0)
+
+            if self.door_stalk_timer <= 0.0:
+                self.door_stalk_phase = 'retreat'
+                self.door_stalk_timer = 0.0
+                self.target_cell = self.pick_retreat_target()
+                self.path = self.find_path(self.monster_cell(), self.target_cell)
+                self.path_timer = 0.0
+            return
+
+        if self.door_stalk_phase == 'retreat':
+            if self.distance_to_player() >= ROAR_SOUND_MAX_DISTANCE:
+                self.teleport_far_from_start()
+                return
+
+            if not self.path:
+                self.target_cell = self.pick_retreat_target()
+                self.path = self.find_path(self.monster_cell(), self.target_cell)
+
+            self.move_along_path(MONSTER_WANDER_SPEED)
+            return
+
+        if self.door_stalk_phase == 'breach':
+            self.update_path((self.door_stalk_key[0], self.door_stalk_key[1]), 0.12)
+            self.move_along_path(self.chase_speed)
+
+            door_x, _, door_z = self.door_stalk_door['position']
+            dx = door_x - self.entity.x
+            dz = door_z - self.entity.z
+            door_dist = (dx * dx + dz * dz) ** 0.5
+
+            if self.reached_stalked_door(door_dist):
+                self.breach_stalked_door()
 
     def update(self):
         self.state_time += time.dt
+        closed_room_key, closed_room_door = self.player_closed_room_door()
+        player_hidden = closed_room_key is not None and closed_room_door is not None
 
         sees_player = (
+            not player_hidden
+            and
             self.distance_to_player() < CHASE_DETECT_DISTANCE
             and self.has_line_of_sight_to_player()
         )
@@ -458,6 +782,13 @@ class MonsterAI:
         if sees_player:
             if self.state not in ('alert', 'chase'):
                 self.set_state('alert')
+
+        if (
+            self.state not in ('door_stalk', 'idle')
+            and player_hidden
+            and self.distance_to_player() <= DOOR_STALK_TRIGGER_DISTANCE
+        ):
+            self.begin_door_stalk(closed_room_key, closed_room_door)
 
         if self.state == 'idle':
             if self.state_time > 1.5:
@@ -495,8 +826,12 @@ class MonsterAI:
                 self.update_path(self.reachable_player_cell(), 0.25)
                 self.move_along_path(self.chase_speed)
 
+        elif self.state == 'door_stalk':
+            self.update_door_stalk()
+
         if self.state in ('idle', 'alert') or (self.state != 'chase' and not self.path):
             self.apply_movement(0.0, 0.0, 0.0)
         else:
             self.face_player_smooth()
         self.update_chase_sound()
+        self.update_roar_sound()

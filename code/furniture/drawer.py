@@ -1,8 +1,10 @@
+import random
+
 from direct.showbase import ShowBaseGlobal
-from panda3d.core import Filename, NodePath, Point3, TransparencyAttrib
+from panda3d.core import CardMaker, Filename, NodePath, PNMImage, Point3, Texture, TransparencyAttrib
 from ursina import Audio, Entity, Vec3, camera, color, time
 
-from map.map_data import CELL, PROJECT_DIR, START_ROOM_CELL
+from map.map_data import CELL, PROJECT_DIR
 
 
 DRAWER_MODEL_PATH = PROJECT_DIR / 'asset' / 'model' / 'drawer.glb'
@@ -16,7 +18,8 @@ DRAWER_WALL_CLEARANCE = 0.04
 DRAWER_OPEN_DISTANCE = 30
 DRAWER_OPEN_SPEED = 10.0
 DRAWER_INTERACT_RAY_DISTANCE = CELL * 0.4
-DRAWER_INTERACT_PAD = 0.01
+DRAWER_INTERACT_PAD = 0.025
+DRAWER_AIM_TIE_DISTANCE = 0.18
 DRAWER_LIGHT_RGB = (255, 228, 172)
 DRAWER_LIGHT_BOOST = 1.7
 DRAWER_MIN_LIGHT = 0.36
@@ -27,7 +30,6 @@ DRAWER_FACE_ROTATIONS = {
     'east': 90,
 }
 DRAWER_BODY_NODE = 'vintage_wooden_drawer_01_body'
-KEY_ROOM_CELL = START_ROOM_CELL
 KEY_DRAWER_NODE = 'vintage_wooden_drawer_01_drawer02'
 KEY_MODEL_TARGET_LONG = 0.18
 KEY_LIGHT_RGB = (255, 225, 100)
@@ -41,6 +43,31 @@ HELD_KEY_POS = (0.62, -0.35, -0.8)
 HELD_KEY_SCALE = (0.16, 0.16)
 HELD_KEY_ROT_Z = -45
 KEY_GET_VOLUME = 1.0
+HELD_NOTE_START_POS = (0.25, -0.40, -0.8)
+HELD_NOTE_SPACING = 0.055
+HELD_NOTE_SCALE = (0.045, 0.045)
+NOTE_PICKUP_MIN_OPEN = 0.45
+NOTE_COUNT = 5
+NOTE_DRAWER_NAMES = (
+    'vintage_wooden_drawer_01_drawer01',
+    'vintage_wooden_drawer_01_drawer02',
+    'vintage_wooden_drawer_01_drawer03',
+    'vintage_wooden_drawer_01_drawer04',
+    'vintage_wooden_drawer_01_drawer05',
+    'vintage_wooden_drawer_01_drawer06',
+)
+NOTE_NUMBER_CHOICES = tuple(str(number) for number in range(1, 10))
+NOTE_SIZE = 0.05
+NOTE_BLOOD_SIZE_MIN = 0.26
+NOTE_BLOOD_SIZE_MAX = 0.5
+NOTE_BLOOD_MARGIN = 0.025
+NOTE_LIGHT_RGB = (255, 244, 208)
+NOTE_LIGHT_BOOST = 1.55
+NOTE_MIN_LIGHT = 0.58
+NOTE_ROTATIONS = (-7, 5, -3, 8, -5)
+NOTE_SURFACE_LIFT = 0.01
+NOTE_POSITION_JITTER = 0.08
+NOTE_ROTATION_JITTER = 60.0
 
 
 class DrawerMixin:
@@ -50,8 +77,13 @@ class DrawerMixin:
         self.drawer_model_size = self.model_size(self.drawer_model, self.drawer_model_scale)
         self.key_model = self.load_key_model()
         self.key_model_scale = self.fit_key_model_scale(self.key_model)
+        self.note_placements = []
+        self.note_placement_lookup = {}
+        self.note_textures = {}
         self.has_key = False
         self.held_key_entity = None
+        self.collected_notes = set()
+        self.held_note_entities = {}
         self.key_get_sound = Audio('asset/sound/key_get.wav', autoplay=False, volume=KEY_GET_VOLUME)
 
     def set_sound_volume(self, sound, volume):
@@ -105,6 +137,153 @@ class DrawerMixin:
 
         self.prepare_key_model(model, normalize=True)
         return model
+
+    def choose_note_placements(self):
+        room_cells = sorted({
+            room_cell
+            for rooms in self._cell_door_rooms.values()
+            for room_cell in rooms
+            if room_cell != self.start_room_cell
+        })
+        selected_rooms = random.sample(room_cells, min(NOTE_COUNT, len(room_cells)))
+        numbers = random.sample(NOTE_NUMBER_CHOICES, len(selected_rooms))
+        self.note_placements = []
+        self.note_placement_lookup = {}
+
+        for index, (room_cell, number) in enumerate(zip(selected_rooms, numbers), start=1):
+            drawer_name = random.choice(NOTE_DRAWER_NAMES)
+            key = (room_cell, drawer_name)
+            placement = {
+                'key': key,
+                'room_cell': room_cell,
+                'drawer_name': drawer_name,
+                'number': number,
+                'blood_count': index,
+            }
+            self.note_placements.append(placement)
+            self.note_placement_lookup[key] = placement
+
+        self.note_textures = self.load_note_textures()
+
+    def note_keypad_code(self):
+        return ''.join(
+            placement['number']
+            for placement in sorted(self.note_placements, key=lambda item: item['blood_count'])
+        )
+
+    def load_note_textures(self):
+        textures = {}
+        blood_path = PROJECT_DIR / 'asset' / 'texture' / 'blood.png'
+        blood_image = PNMImage()
+
+        if not blood_image.read(Filename.fromOsSpecific(str(blood_path))):
+            return textures
+
+        for placement in self.note_placements:
+            number = placement['number']
+            path = PROJECT_DIR / 'asset' / 'texture' / f'{number}.png'
+            note_image = PNMImage()
+
+            if not note_image.read(Filename.fromOsSpecific(str(path))):
+                continue
+
+            rng = random.Random(f'note_texture:{placement["key"]}:{number}')
+            self.multiply_blood_onto_note(note_image, blood_image, placement['blood_count'], rng)
+            texture = Texture(f'note_{placement["room_cell"]}_{placement["drawer_name"]}_{number}')
+            texture.load(note_image)
+            textures[placement['key']] = texture
+
+        return textures
+
+    def multiply_blood_onto_note(self, note_image, blood_image, count, rng):
+        spots = self.non_overlapping_blood_spots(
+            count,
+            min(note_image.getXSize(), note_image.getYSize()),
+            rng,
+        )
+
+        for center_x, center_y, size in spots:
+            self.multiply_blood_spot(note_image, blood_image, center_x, center_y, size)
+
+    def multiply_blood_spot(self, note_image, blood_image, center_x, center_y, size):
+        note_w = note_image.getXSize()
+        note_h = note_image.getYSize()
+        blood_w = blood_image.getXSize()
+        blood_h = blood_image.getYSize()
+        half = size * 0.5
+        x0 = max(0, int(center_x - half))
+        y0 = max(0, int(center_y - half))
+        x1 = min(note_w - 1, int(center_x + half))
+        y1 = min(note_h - 1, int(center_y + half))
+
+        if size <= 0:
+            return
+
+        for y in range(y0, y1 + 1):
+            blood_y = int(((y - (center_y - half)) / size) * (blood_h - 1))
+            blood_y = max(0, min(blood_h - 1, blood_y))
+
+            for x in range(x0, x1 + 1):
+                blood_x = int(((x - (center_x - half)) / size) * (blood_w - 1))
+                blood_x = max(0, min(blood_w - 1, blood_x))
+                blood_alpha = blood_image.getAlpha(blood_x, blood_y) if blood_image.hasAlpha() else 1.0
+
+                if blood_alpha <= 0.01:
+                    continue
+
+                note_rgb = note_image.getXel(x, y)
+                blood_rgb = blood_image.getXel(blood_x, blood_y)
+                amount = blood_alpha * 0.95
+                multiplied = (
+                    note_rgb.x * blood_rgb.x,
+                    note_rgb.y * blood_rgb.y,
+                    note_rgb.z * blood_rgb.z,
+                )
+                note_image.setXel(
+                    x,
+                    y,
+                    note_rgb.x * (1.0 - amount) + multiplied[0] * amount,
+                    note_rgb.y * (1.0 - amount) + multiplied[1] * amount,
+                    note_rgb.z * (1.0 - amount) + multiplied[2] * amount,
+                )
+
+    def non_overlapping_blood_spots(self, count, base_size, rng):
+        spots = []
+
+        for _ in range(count):
+            size = rng.uniform(NOTE_BLOOD_SIZE_MIN, NOTE_BLOOD_SIZE_MAX) * base_size
+            margin = NOTE_BLOOD_MARGIN * base_size + size * 0.5
+            min_x = margin
+            max_x = base_size - margin
+            min_y = margin
+            max_y = base_size - margin
+            candidate = None
+
+            if min_x > max_x or min_y > max_y:
+                continue
+
+            for _ in range(80):
+                x = rng.uniform(min_x, max_x)
+                y = rng.uniform(min_y, max_y)
+
+                if all(
+                    ((x - px) ** 2 + (y - py) ** 2) ** 0.5 >= (size + psize) * 0.48
+                    for px, py, psize in spots
+                ):
+                    candidate = (x, y, size)
+                    break
+
+            if candidate is None:
+                grid = (
+                    (0.28, 0.28), (0.72, 0.28), (0.50, 0.50),
+                    (0.28, 0.72), (0.72, 0.72),
+                )
+                gx, gy = grid[len(spots) % len(grid)]
+                candidate = (base_size * gx, base_size * gy, size)
+
+            spots.append(candidate)
+
+        return spots
 
     def prepare_drawer_model(self, model, normalize=False):
         model.setTwoSided(True)
@@ -254,11 +433,13 @@ class DrawerMixin:
             open_amount = 1.0 if self.drawer_states.get(key, False) else 0.0
             node.setPos(base_pos.x, base_pos.y, base_pos.z - open_offset * open_amount)
             key_data = self.add_key_to_drawer(entity, node, drawer_name, bounds_min, bounds_max, position, near_lights)
+            note_data = self.add_note_to_drawer(entity, node, drawer_name, bounds_min, bounds_max, position, near_lights)
             self.active_drawers[key] = {
                 'entity': entity,
                 'node': node,
                 'key': key_data,
                 'key_node': key_data['node'] if key_data else None,
+                'note': note_data,
                 'base_pos': base_pos,
                 'open_offset': open_offset,
                 'bounds_min': bounds_min,
@@ -275,7 +456,7 @@ class DrawerMixin:
     def add_key_to_drawer(self, entity, drawer_node, drawer_name, bounds_min, bounds_max, position, near_lights):
         room_cell = (round(position[2] / CELL), round(position[0] / CELL))
 
-        if room_cell != KEY_ROOM_CELL or drawer_name != KEY_DRAWER_NODE:
+        if room_cell != self.start_room_cell or drawer_name != KEY_DRAWER_NODE:
             return None
 
         center = Point3(
@@ -307,6 +488,51 @@ class DrawerMixin:
         return {
             'node': key_node,
             'glow': glow_node,
+        }
+
+    def add_note_to_drawer(self, entity, drawer_node, drawer_name, bounds_min, bounds_max, position, near_lights):
+        room_cell = (round(position[2] / CELL), round(position[0] / CELL))
+
+        placement = self.note_placement_lookup.get((room_cell, drawer_name))
+
+        if not placement:
+            return None
+
+        number = placement['number']
+        texture = self.note_textures.get(placement['key']) if number else None
+
+        if not texture:
+            return None
+
+        index = placement['blood_count'] - 1
+        rng = random.Random(f'{room_cell}:{drawer_name}:{number}')
+        x_jitter = rng.uniform(-NOTE_POSITION_JITTER, NOTE_POSITION_JITTER)
+        z_jitter = rng.uniform(-NOTE_POSITION_JITTER, NOTE_POSITION_JITTER)
+        rotation_jitter = rng.uniform(-NOTE_ROTATION_JITTER, NOTE_ROTATION_JITTER)
+        center = Point3(
+            (bounds_min.x + bounds_max.x) * 0.5 + x_jitter,
+            bounds_min.y + (bounds_max.y - bounds_min.y) * 0.12 + NOTE_SURFACE_LIFT,
+            (bounds_min.z + bounds_max.z) * 0.5 + z_jitter,
+        )
+        local_pos = drawer_node.getRelativePoint(entity, center)
+        light_val = self.light_system.light_at(position[0], center.y, position[2], near_lights)
+        tint = self.light_system.shaded_color(NOTE_LIGHT_RGB, light_val * NOTE_LIGHT_BOOST, NOTE_MIN_LIGHT)
+
+        card = CardMaker(f'note_{number}')
+        card.setFrame(-NOTE_SIZE * 0.5, NOTE_SIZE * 0.5, -NOTE_SIZE * 0.5, NOTE_SIZE * 0.5)
+        note_node = drawer_node.attachNewNode(card.generate())
+        note_node.setTexture(texture, 1)
+        note_node.setTransparency(TransparencyAttrib.MAlpha)
+        note_node.setTwoSided(True)
+        note_node.setPos(local_pos)
+        note_node.setHpr(0, 0, NOTE_ROTATIONS[index] + rotation_jitter)
+        note_node.setColorScale(tint.r, tint.g, tint.b, 1.0)
+
+        return {
+            'node': note_node,
+            'number': number,
+            'texture': texture,
+            'blood_count': placement['blood_count'],
         }
 
     def drawer_moving_nodes(self, entity):
@@ -390,7 +616,29 @@ class DrawerMixin:
         if not bounds:
             return None
 
-        return self.drawer_ray_box_distance(origin, ray, bounds[0], bounds[1], KEY_INTERACT_PAD)
+        return self.drawer_ray_box_distance(origin, ray, bounds[0], bounds[1], DRAWER_INTERACT_PAD)
+
+    def drawer_aim_offset(self, drawer, origin, ray):
+        bounds = self.drawer_world_bounds(drawer['node'])
+
+        if not bounds:
+            return float('inf')
+
+        mn, mx = bounds
+        cx = (mn.x + mx.x) * 0.5
+        cy = (mn.y + mx.y) * 0.5
+        cz = (mn.z + mx.z) * 0.5
+        dx = cx - origin.x
+        dy = cy - origin.y
+        dz = cz - origin.z
+        t = max(0.0, dx * ray.x + dy * ray.y + dz * ray.z)
+        closest_x = origin.x + ray.x * t
+        closest_y = origin.y + ray.y * t
+        closest_z = origin.z + ray.z * t
+        off_x = cx - closest_x
+        off_y = cy - closest_y
+        off_z = cz - closest_z
+        return (off_x * off_x + off_y * off_y + off_z * off_z) ** 0.5
 
     def key_hit_distance(self, drawer, origin, ray):
         key_data = drawer.get('key')
@@ -409,6 +657,23 @@ class DrawerMixin:
 
         return self.drawer_ray_box_distance(origin, ray, bounds[0], bounds[1])
 
+    def note_hit_distance(self, drawer, origin, ray):
+        note_data = drawer.get('note')
+
+        if not note_data or drawer.get('open', 0.0) < NOTE_PICKUP_MIN_OPEN:
+            return None
+
+        note_node = note_data['node']
+        if note_node.isHidden():
+            return None
+
+        bounds = self.drawer_world_bounds(note_node)
+
+        if not bounds:
+            return None
+
+        return self.drawer_ray_box_distance(origin, ray, bounds[0], bounds[1])
+
     def nearest_key_ray_hit(self, origin, ray):
         nearest_key = None
         nearest_t = DRAWER_INTERACT_RAY_DISTANCE
@@ -420,6 +685,24 @@ class DrawerMixin:
                 continue
 
             t = self.key_hit_distance(drawer, origin, ray)
+
+            if t is not None and t < nearest_t:
+                nearest_key = key
+                nearest_t = t
+
+        return nearest_key, nearest_t if nearest_key is not None else None
+
+    def nearest_note_ray_hit(self, origin, ray):
+        nearest_key = None
+        nearest_t = DRAWER_INTERACT_RAY_DISTANCE
+
+        for key, drawer in self.active_drawers.items():
+            entity = drawer['entity']
+
+            if not entity.enabled:
+                continue
+
+            t = self.note_hit_distance(drawer, origin, ray)
 
             if t is not None and t < nearest_t:
                 nearest_key = key
@@ -454,6 +737,19 @@ class DrawerMixin:
         self.show_held_key()
         return True
 
+    def pickup_note(self, key):
+        drawer = self.active_drawers.get(key)
+        note_data = drawer.get('note') if drawer else None
+
+        if not note_data or key in self.collected_notes:
+            return False
+
+        self.collected_notes.add(key)
+        note_data['node'].hide()
+        self.play_sound(self.key_get_sound, KEY_GET_VOLUME)
+        self.show_held_note(key, note_data)
+        return True
+
     def consume_key(self):
         if not self.has_key:
             return False
@@ -472,12 +768,20 @@ class DrawerMixin:
             self.held_key_entity.enabled = False
 
         for key, drawer in self.active_drawers.items():
-            if key[1] == KEY_ROOM_CELL[0] and key[2] == KEY_ROOM_CELL[1]:
+            if key[1] == self.start_room_cell[0] and key[2] == self.start_room_cell[1]:
                 self.drawer_states[key] = False
                 drawer['open'] = 0.0
                 drawer['target'] = 0.0
                 base_pos = drawer['base_pos']
                 drawer['node'].setPos(base_pos.x, base_pos.y, base_pos.z)
+
+            note_data = drawer.get('note')
+
+            if note_data:
+                if key in self.collected_notes:
+                    note_data['node'].hide()
+                else:
+                    note_data['node'].show()
 
             key_data = drawer.get('key')
 
@@ -503,10 +807,30 @@ class DrawerMixin:
         )
         self.held_key_entity.always_on_top = True
 
+    def show_held_note(self, key, note_data):
+        if key in self.held_note_entities:
+            self.held_note_entities[key].enabled = True
+            return
+
+        index = len(self.held_note_entities)
+        x = HELD_NOTE_START_POS[0] + HELD_NOTE_SPACING * index
+        entity = Entity(
+            parent=camera.ui,
+            model='quad',
+            position=(x, HELD_NOTE_START_POS[1], HELD_NOTE_START_POS[2]),
+            rotation=(0, 0, 0),
+            scale=HELD_NOTE_SCALE,
+            color=color.white,
+        )
+        entity.model.setTexture(note_data['texture'], 1)
+        entity.always_on_top = True
+        self.held_note_entities[key] = entity
+
     def nearest_drawer_ray_hit(self, origin, ray):
         nearest_kind = None
         nearest_key = None
         nearest_t = DRAWER_INTERACT_RAY_DISTANCE
+        nearest_aim_offset = float('inf')
         checked_bodies = set()
 
         for key, drawer in self.active_drawers.items():
@@ -517,10 +841,18 @@ class DrawerMixin:
 
             t = self.drawer_hit_distance(drawer, origin, ray)
 
-            if t is not None and t < nearest_t:
-                nearest_kind = 'drawer'
-                nearest_key = key
-                nearest_t = t
+            if t is not None:
+                aim_offset = self.drawer_aim_offset(drawer, origin, ray)
+                is_better_aim = (
+                    aim_offset + 1e-4 < nearest_aim_offset
+                    and abs(t - nearest_t) <= DRAWER_AIM_TIE_DISTANCE
+                )
+
+                if t < nearest_t - DRAWER_AIM_TIE_DISTANCE or is_better_aim:
+                    nearest_kind = 'drawer'
+                    nearest_key = key
+                    nearest_t = t
+                    nearest_aim_offset = aim_offset
 
             body_node = drawer.get('body_node')
 
@@ -539,6 +871,7 @@ class DrawerMixin:
                 nearest_kind = 'body'
                 nearest_key = None
                 nearest_t = body_t
+                nearest_aim_offset = float('inf')
 
         if nearest_kind == 'drawer':
             return nearest_key, nearest_t
