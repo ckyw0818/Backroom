@@ -323,7 +323,7 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
 
                     moved = True
 
-            for entity in self._active_interactive_colliders():
+            for entity in self.active_collision_entities():
                 if not getattr(entity, 'enabled', True) or getattr(entity, 'collider', None) is None:
                     continue
 

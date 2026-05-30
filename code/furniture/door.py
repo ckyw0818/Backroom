@@ -94,8 +94,6 @@ KEYPAD_BUTTONS = (
     ('7', 0.597, -0.357), ('8', 0.235, -0.357), ('9', -0.126, -0.357),
     ('0', 0.235, -0.717), ('enter', -0.62, -0.10),
 )
-
-
 class DoorMixin(BedMixin, DrawerMixin):
     def init_door_assets(self):
         self.door_model = self.load_door_model()
@@ -540,6 +538,9 @@ class DoorMixin(BedMixin, DrawerMixin):
         return closed_collider
 
     def build_door_room(self, room_cell):
+        if room_cell == self.exit_room_cell:
+            return self.build_exit_plain(room_cell)
+
         cr, cc = room_cell
         skip_faces = self.room_openings(room_cell)
 
@@ -606,6 +607,9 @@ class DoorMixin(BedMixin, DrawerMixin):
         self.add_drawer_decoration(entities, cx, cz, skip_faces, bed_face, west_x, north_z, east_x, south_z, lit_near)
 
         return entities
+
+    def build_exit_plain(self, room_cell):
+        return []
 
     def should_add_door(self, r, c, face):
         return (r, c, face) in self._door_set
@@ -982,6 +986,34 @@ class DoorMixin(BedMixin, DrawerMixin):
 
         self.door_open_sound.stop()
         self.door_open_sound.play(start=0.3)
+
+    def debug_unlock_exit_door(self):
+        key = self.exit_sign_door_key
+
+        if key is None:
+            return False
+
+        keypad = self.active_keypads.get(key)
+        if keypad:
+            keypad_code = self.note_keypad_code() or KEYPAD_CODE
+            for label in keypad_code:
+                self.press_keypad_button(key, label)
+            self.press_keypad_button(key, 'enter')
+
+        self.unlock_keypad_door(key)
+        door = self.active_doors.get(key)
+        if door:
+            door['open'] = max(door.get('open', 0.0), 0.55)
+
+            collider = door.get('wall_collider')
+            if collider:
+                self.set_door_wall_collision(collider, False)
+
+        if keypad:
+            keypad['pending_result_sound'] = None
+            keypad['pending_unlock'] = False
+
+        return True
 
     def update_keypads(self):
         for keypad in self.active_keypads.values():

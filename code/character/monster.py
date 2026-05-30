@@ -647,7 +647,7 @@ class MonsterAI:
         self.path = []
         self.path_timer = 0.0
         self.set_state('door_stalk')
-        self.start_roar_sound()
+        self.breach_stalked_door()
 
     def breach_stalked_door(self):
         self.stop_roar_sound()

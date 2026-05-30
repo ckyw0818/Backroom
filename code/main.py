@@ -15,6 +15,7 @@ from panda3d.core import AmbientLight as Panda3dAmbientLight, Point2
 from character.monster import MonsterAI
 from character.player_controller import CAMERA_FOV, RUN_SPEED, HeadBob, create_player
 from furniture.door import DOOR_DENSITY, DOOR_FACE_SALTS
+from game_clear import GameClearSequence
 from map.game_map import MapRenderer
 from map.light import LightSystem
 from map.map_data import CELL, LAYOUT, START_ROOM_CELL, WALL_H
@@ -38,6 +39,7 @@ CROSSHAIR_SMOOTHING = 14.0
 NOISE_SONAR_STRENGTH = 1.0
 NOISE_DOOR_STRENGTH = 0.7
 NOISE_DRAWER_STRENGTH = 0.45
+EXIT_BACKGROUND = color.Color(1.0, 1.0, 1.0, 1.0)
 NOISE_FOOTSTEP_STRENGTH = 0.3
 JUMPSCARE_SCREEN_PAD = 0.08
 JUMPSCARE_PLAY_TIME = 3
@@ -677,12 +679,13 @@ death_state = 'alive'
 death_timer = 0.0
 player_hearts = MAX_PLAYER_HEARTS
 death_lost_heart_index = None
+game_clear_sequence = None
 
 _amb = Panda3dAmbientLight('ambient')
 _amb.setColor((0.0, 0.0, 0.0, 1.0))
 render_root.setLight(render_root.attachNewNode(_amb))
 
-Text(
+guide_text = Text(
     text='THE BACKROOMS  |  WASD: Move   Mouse: Look   E: Door   ESC: Quit',
     origin=(0, 0),
     position=(0, -0.46),
@@ -702,11 +705,54 @@ minimap_tab_was_down = False
 minimap_visible = False
 
 
+def update_exit_background():
+    player_cell = map_renderer.player_cell()
+    in_exit = player_cell == map_renderer.exit_room_cell
+    sees_open_exit = False
+
+    if map_renderer.exit_sign_door_key is not None:
+        door_r, door_c, _ = map_renderer.exit_sign_door_key
+        exit_door = map_renderer.active_doors.get(map_renderer.exit_sign_door_key)
+        exit_door_visible_open = (
+            map_renderer.door_states.get(map_renderer.exit_sign_door_key, False)
+            or (exit_door is not None and exit_door.get('open', 0.0) > 0.02)
+        )
+        sees_open_exit = (
+            player_cell == (door_r, door_c)
+            and exit_door_visible_open
+        )
+
+    show_exit_background = in_exit or sees_open_exit
+    background = EXIT_BACKGROUND if show_exit_background else DARK_COLOR
+    camera.background_color = background
+    scene.fog_color = background
+    window.color = background
+    return show_exit_background
+
+
 map_renderer.initial_render()
+game_clear_sequence = GameClearSequence(
+    player,
+    map_renderer,
+    CELL,
+    vent_ambience,
+    heartbeat_sound,
+    crosshair,
+    minimap,
+    fade_monster_sounds,
+    update_exit_background,
+    post_effects,
+    guide_text,
+)
 
 
 def update():
     global heartbeat_rate, minimap_scan_was_down, minimap_tab_was_down, minimap_visible
+
+    if game_clear_sequence.update():
+        if held_keys['escape']:
+            application.quit()
+        return
 
     if update_death_sequence():
         if held_keys['escape']:
@@ -718,6 +764,11 @@ def update():
     map_renderer.update_doors()
     map_renderer.update_drawers()
     map_renderer.resolve_player_collision()
+    update_exit_background()
+    if game_clear_sequence.check_trigger(death_state == 'alive'):
+        game_clear_sequence.update()
+        return
+
     update_monster_pressure()
 
     for monster in active_monsters():
@@ -771,7 +822,34 @@ def update():
         application.quit()
 
 
+def teleport_to_exit_door_debug():
+    key = getattr(map_renderer, 'exit_sign_door_key', None)
+
+    if key is None:
+        return False
+
+    door = map_renderer.active_doors.get(key)
+    r, c, _ = key
+    spawn_x = c * CELL
+    spawn_z = r * CELL
+    player.position = (spawn_x, 0, spawn_z)
+
+    if door:
+        door_x, _, door_z = door['position']
+        player.rotation_y = math.degrees(math.atan2(door_x - spawn_x, door_z - spawn_z))
+
+    map_renderer.debug_unlock_exit_door()
+    return True
+
+
 def input(key):
+    if game_clear_sequence.is_active():
+        return
+
+    if key == '1':
+        teleport_to_exit_door_debug()
+        return
+
     if key == 'e':
         interaction = map_renderer.nearest_interaction()
         if map_renderer.interact_nearest() and interaction:
