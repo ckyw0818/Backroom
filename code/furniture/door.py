@@ -122,6 +122,7 @@ class DoorMixin(BedMixin, DrawerMixin):
         self._door_set = frozenset(generated_doors)
 
         self._cell_door_rooms = {}
+        self.door_room_cells = set()
         self.exit_room_cell = self.random_edge_exit_room_cell(self.start_room_cell)
         self.exit_room_cells = frozenset((self.exit_room_cell,)) if self.exit_room_cell else frozenset()
         self.exit_sign_door_key = self.locked_room_door_key(self.exit_room_cell)
@@ -138,6 +139,7 @@ class DoorMixin(BedMixin, DrawerMixin):
 
             if rooms:
                 self._cell_door_rooms[(r, c)] = rooms
+                self.door_room_cells.update(rooms)
 
         self.choose_note_placements()
 

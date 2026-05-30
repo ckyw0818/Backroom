@@ -52,6 +52,7 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
             for c in range(COLS)
             if LAYOUT[r][c] == 0
         }
+        self.door_room_cells = set()
         self.build_door_lookup()
 
         self._raycast_cache_key = None
@@ -68,6 +69,97 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
             scale=(COLS * CELL, 0.1, ROWS * CELL),
             collider='box',
         )
+        self.static_entities = []
+
+    def wall_at(self, r, c):
+        return r < 0 or r >= ROWS or c < 0 or c >= COLS or LAYOUT[r][c] != 0
+
+    def build_static_world(self):
+        mesh_data = self.new_mesh_data()
+        layout = LAYOUT
+
+        for r in range(ROWS):
+            for c in range(COLS):
+                if layout[r][c] != 0:
+                    continue
+
+                near_lights = self.light_system.cell_cache.get((r, c), self.light_system.positions)
+                self.add_subdivided_floor(mesh_data, r, c, near_lights)
+
+                x0 = c * CELL - CELL / 2
+                x1 = c * CELL + CELL / 2
+                z0 = r * CELL - CELL / 2
+                z1 = r * CELL + CELL / 2
+
+                if self.wall_at(r - 1, c):
+                    has_door = self.should_add_door(r, c, 'north')
+                    add_wall = self.add_wall_with_baseboard_gap if has_door else self.add_wall_with_baseboard
+                    add_wall(mesh_data, x0, z0, x1, z0, 0, BASEBOARD_OUT, near_lights, not has_door)
+
+                if self.wall_at(r + 1, c):
+                    has_door = self.should_add_door(r, c, 'south')
+                    add_wall = self.add_wall_with_baseboard_gap if has_door else self.add_wall_with_baseboard
+                    add_wall(mesh_data, x1, z1, x0, z1, 0, -BASEBOARD_OUT, near_lights, not has_door)
+
+                if self.wall_at(r, c - 1):
+                    has_door = self.should_add_door(r, c, 'west')
+                    add_wall = self.add_wall_with_baseboard_gap if has_door else self.add_wall_with_baseboard
+                    add_wall(mesh_data, x0, z1, x0, z0, BASEBOARD_OUT, 0, near_lights, not has_door)
+
+                if self.wall_at(r, c + 1):
+                    has_door = self.should_add_door(r, c, 'east')
+                    add_wall = self.add_wall_with_baseboard_gap if has_door else self.add_wall_with_baseboard
+                    add_wall(mesh_data, x1, z0, x1, z1, -BASEBOARD_OUT, 0, near_lights, not has_door)
+
+        for data in mesh_data.values():
+            entity = self.add_mesh_entity(data)
+            if entity:
+                self.static_entities.append(entity)
+
+    def _build_door_entities(self, r, c):
+        entities = []
+        x = c * CELL
+        z = r * CELL
+        near_lights = self.light_system.cell_cache.get((r, c), self.light_system.positions)
+        layout = LAYOUT
+
+        for face, (tr, tc) in (
+            ('north', (r - 1, c)),
+            ('south', (r + 1, c)),
+            ('west',  (r, c - 1)),
+            ('east',  (r, c + 1)),
+        ):
+            has_wall = tr < 0 or tr >= ROWS or tc < 0 or tc >= COLS or layout[tr][tc] == 1
+            if not has_wall:
+                continue
+            if not self.should_add_door(r, c, face):
+                continue
+            wc = self.add_door_wall_colliders(entities, x, z, face)
+            entities.append(wc)
+            self.add_door_decoration(entities, x, z, face, near_lights, wc)
+
+        return entities
+
+    def _active_interactive_colliders(self):
+        seen = set()
+
+        for cell_entities in self.prebuilt_cells.values():
+            for entity in cell_entities:
+                if not self.is_collision_entity(entity):
+                    continue
+                eid = id(entity)
+                if eid not in seen:
+                    seen.add(eid)
+                    yield entity
+
+        for room_entities in self.prebuilt_rooms.values():
+            for entity in room_entities:
+                if not self.is_collision_entity(entity):
+                    continue
+                eid = id(entity)
+                if eid not in seen:
+                    seen.add(eid)
+                    yield entity
 
     def player_cell(self):
         return (
@@ -190,15 +282,48 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
         return 0.21
 
     def resolve_player_collision(self):
-        player_half = self.player_collision_half_width()
+        HALF_W = 0.21
         epsilon = 0.004
+        half_cell = CELL * 0.5
+        layout = LAYOUT
 
         for _ in range(4):
             moved = False
             px = self.player.x
             pz = self.player.z
 
-            for entity in self.active_collision_entities():
+            cell_c = int((px + half_cell) // CELL)
+            cell_r = int((pz + half_cell) // CELL)
+
+            for dr in range(-1, 2):
+                for dc in range(-1, 2):
+                    r = cell_r + dr
+                    c = cell_c + dc
+                    if not (0 <= r < ROWS and 0 <= c < COLS):
+                        continue
+                    if (r, c) in self.door_room_cells:
+                        continue
+                    if layout[r][c] == 0:
+                        continue
+
+                    wall_cx = c * CELL
+                    wall_cz = r * CELL
+                    dx = px - wall_cx
+                    dz = pz - wall_cz
+                    overlap_x = HALF_W + half_cell - abs(dx)
+                    overlap_z = HALF_W + half_cell - abs(dz)
+
+                    if overlap_x <= 0 or overlap_z <= 0:
+                        continue
+
+                    if overlap_x < overlap_z:
+                        px += (1 if dx >= 0 else -1) * (overlap_x + epsilon)
+                    else:
+                        pz += (1 if dz >= 0 else -1) * (overlap_z + epsilon)
+
+                    moved = True
+
+            for entity in self._active_interactive_colliders():
                 if not getattr(entity, 'enabled', True) or getattr(entity, 'collider', None) is None:
                     continue
 
@@ -208,8 +333,8 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
                 hz = self.collider_axis_value(entity, 'scale_z', 2, 0.0) * 0.5
                 dx = px - ex
                 dz = pz - ez
-                overlap_x = player_half + hx - abs(dx)
-                overlap_z = player_half + hz - abs(dz)
+                overlap_x = HALF_W + hx - abs(dx)
+                overlap_z = HALF_W + hz - abs(dz)
 
                 if overlap_x <= 0 or overlap_z <= 0:
                     continue
@@ -560,29 +685,24 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
                     entity.enabled = False
 
     def initial_render(self):
+        self.build_static_world()
+
         all_room_cells = set()
         for r in range(ROWS):
             for c in range(COLS):
                 if LAYOUT[r][c] != 0:
                     continue
-                entities = self.build_cell(r, c)
-                self.prebuilt_cells[(r, c)] = entities
-                for entity in entities:
-                    entity.enabled = False
+                door_entities = self._build_door_entities(r, c)
+                if door_entities:
+                    self.prebuilt_cells[(r, c)] = door_entities
                 for room_cell in self._cell_door_rooms.get((r, c), set()):
                     all_room_cells.add(room_cell)
 
         for room_cell in all_room_cells:
             entities = self.build_door_room(room_cell)
             self.prebuilt_rooms[room_cell] = entities
-            for entity in entities:
-                entity.enabled = False
 
         for cell in self.light_system.cell_set:
             r, c = cell
             entities = self.light_system.add_fixture(r, c)
             self.prebuilt_lights[cell] = entities
-            for entity in entities:
-                entity.enabled = False
-
-        self.update_rendered_scene(force=True)

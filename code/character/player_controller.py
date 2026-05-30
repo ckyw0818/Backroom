@@ -1,11 +1,10 @@
 import math
 import random
 
-from ursina import BoxCollider, Vec2, Vec3, camera, held_keys, time
+from ursina import Vec2, camera, held_keys, time
 from ursina.prefabs.first_person_controller import FirstPersonController
 
 PLAYER_H = 1.15
-PLAYER_COLLIDER_W = 0.42
 CAMERA_FOV = 80
 WALK_SPEED = 3.0
 RUN_SPEED = 5.2
@@ -25,11 +24,7 @@ def create_player(cell_size, spawn_r=1, spawn_c=1, spawn_yaw=0):
     player.gravity = 0
     player.height = PLAYER_H
     player.camera_pivot.y = PLAYER_H
-    player.collider = BoxCollider(
-        player,
-        center=Vec3(0, PLAYER_H / 2, 0),
-        size=Vec3(PLAYER_COLLIDER_W, PLAYER_H, PLAYER_COLLIDER_W),
-    )
+    player.collider = None
     player.cursor.visible = False
     return player
 

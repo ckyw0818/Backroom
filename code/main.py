@@ -320,7 +320,6 @@ def reset_run_after_death():
     minimap.reset_monster_fixes()
     minimap_visible = False
     minimap.set_enabled(False)
-    map_renderer.update_rendered_scene(force=True)
 
 
 def start_death_sequence():
@@ -453,6 +452,8 @@ def random_start_room_cell():
                 continue
 
             for face in ('north', 'south', 'west', 'east'):
+                if r <= 1 and c <= 2:
+                    continue
                 if (r * 17 + c * 31 + DOOR_FACE_SALTS[face]) % DOOR_DENSITY != 0:
                     continue
 
@@ -712,10 +713,11 @@ def update():
             application.quit()
         return
 
-    map_renderer.update_rendered_scene()
-    map_renderer.process_queues()
+    # map_renderer.update_rendered_scene()
+    # map_renderer.process_queues()
     map_renderer.update_doors()
     map_renderer.update_drawers()
+    map_renderer.resolve_player_collision()
     update_monster_pressure()
 
     for monster in active_monsters():

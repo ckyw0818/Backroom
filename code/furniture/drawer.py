@@ -43,6 +43,7 @@ HELD_KEY_POS = (0.62, -0.35, -0.8)
 HELD_KEY_SCALE = (0.16, 0.16)
 HELD_KEY_ROT_Z = -45
 KEY_GET_VOLUME = 1.0
+PAPER_GET_VOLUME = 1.0
 HELD_NOTE_START_POS = (0.25, -0.40, -0.8)
 HELD_NOTE_SPACING = 0.055
 HELD_NOTE_SCALE = (0.045, 0.045)
@@ -85,6 +86,7 @@ class DrawerMixin:
         self.collected_notes = set()
         self.held_note_entities = {}
         self.key_get_sound = Audio('asset/sound/key_get.wav', autoplay=False, volume=KEY_GET_VOLUME)
+        self.paper_get_sound = Audio('asset/sound/paper.wav', autoplay=False, volume=PAPER_GET_VOLUME)
 
     def set_sound_volume(self, sound, volume):
         try:
@@ -746,7 +748,7 @@ class DrawerMixin:
 
         self.collected_notes.add(key)
         note_data['node'].hide()
-        self.play_sound(self.key_get_sound, KEY_GET_VOLUME)
+        self.play_sound(self.paper_get_sound, PAPER_GET_VOLUME)
         self.show_held_note(key, note_data)
         return True
 
