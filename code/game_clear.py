@@ -20,7 +20,6 @@ CREDIT_END_SCREEN_Y = 0.78
 CREDIT_TEXT_SCALE_MULTIPLIER = 1.4
 ENDING_CREDITS = (
     ('image', 'asset/ending_credit/main.png', 0.36, 0.36),
-    ('spacer', ''),
     ('section', 'A GAME BY'),
     ('name', 'Choi Yeonwoo / Seoyoon Son'),
     ('spacer', ''),
@@ -36,9 +35,7 @@ ENDING_CREDITS = (
     ('pair', 'Sound Design', 'Pixabay Royalty-free sound effects and music'),
     ('spacer', ''),
     ('section', 'MADE WITH'),
-    ('item', 'Python'),
     ('image', 'asset/ending_credit/python.png', 0.22, 0.22),
-    ('item', 'Ursina Engine'),
     ('image', 'asset/ending_credit/ursina.png', 0.22, 0.22),
     ('item', 'Panda3D'),
     ('spacer', ''),

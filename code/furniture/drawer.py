@@ -44,9 +44,17 @@ HELD_KEY_SCALE = (0.16, 0.16)
 HELD_KEY_ROT_Z = -45
 KEY_GET_VOLUME = 1.0
 PAPER_GET_VOLUME = 1.0
-HELD_NOTE_START_POS = (0.25, -0.40, -0.8)
-HELD_NOTE_SPACING = 0.055
-HELD_NOTE_SCALE = (0.045, 0.045)
+HELD_NOTE_START_POS = (-0.66, -0.40, -0.80)
+HELD_NOTE_SPACING = 0.118
+HELD_NOTE_SCALE = (0.1, 0.1)
+START_ROOM_WALL_NOTE_SIZE = (0.25, 0.25)
+START_ROOM_WALL_NOTE_Y = 1.15
+START_ROOM_WALL_NOTE_OFFSET = 0.035
+START_ROOM_WALL_NOTES = (
+    ('asset/texture/note1.png', -0.34, -0.04, -18),
+    ('asset/texture/note2.png', 0.00, 0.08, 9),
+    ('asset/texture/note3.png', 0.34, -0.03, 24),
+)
 NOTE_PICKUP_MIN_OPEN = 0.45
 NOTE_COUNT = 5
 NOTE_DRAWER_NAMES = (
@@ -58,7 +66,7 @@ NOTE_DRAWER_NAMES = (
     'vintage_wooden_drawer_01_drawer06',
 )
 NOTE_NUMBER_CHOICES = tuple(str(number) for number in range(1, 10))
-NOTE_SIZE = 0.05
+NOTE_SIZE = 0.08
 NOTE_BLOOD_SIZE_MIN = 0.26
 NOTE_BLOOD_SIZE_MAX = 0.5
 NOTE_BLOOD_MARGIN = 0.025
@@ -85,6 +93,7 @@ class DrawerMixin:
         self.held_key_entity = None
         self.collected_notes = set()
         self.held_note_entities = {}
+        self.held_note_placeholders = []
         self.key_get_sound = Audio('asset/sound/key_get.wav', autoplay=False, volume=KEY_GET_VOLUME)
         self.paper_get_sound = Audio('asset/sound/paper.wav', autoplay=False, volume=PAPER_GET_VOLUME)
 
@@ -426,6 +435,8 @@ class DrawerMixin:
         collider._collision_entity = True
         entities.append(collider)
 
+        self.add_start_room_wall_note(entities, cx, cz, face, west_x, north_z, east_x, south_z, near_lights)
+
         moving_nodes = self.drawer_moving_nodes(entity)
         body_node = self.drawer_body_node(entity)
         open_offset = self.drawer_open_offset(entity)
@@ -454,6 +465,39 @@ class DrawerMixin:
                 'open_sound': Audio('asset/sound/drawer_open.wav', autoplay=False, volume=1.0),
                 'close_sound': Audio('asset/sound/drawer_close.wav', autoplay=False, volume=1.0),
             }
+
+    def add_start_room_wall_note(self, entities, cx, cz, face, west_x, north_z, east_x, south_z, near_lights):
+        if (round(cz / CELL), round(cx / CELL)) != self.start_room_cell:
+            return
+
+        off = START_ROOM_WALL_NOTE_OFFSET
+        for texture, along_offset, y_offset, roll in START_ROOM_WALL_NOTES:
+            if face == 'north':
+                position = (cx + along_offset, START_ROOM_WALL_NOTE_Y + y_offset, north_z + off)
+                rotation_y = 180
+            elif face == 'south':
+                position = (cx + along_offset, START_ROOM_WALL_NOTE_Y + y_offset, south_z - off)
+                rotation_y = 0
+            elif face == 'west':
+                position = (west_x + off, START_ROOM_WALL_NOTE_Y + y_offset, cz - along_offset)
+                rotation_y = -90
+            else:
+                position = (east_x - off, START_ROOM_WALL_NOTE_Y + y_offset, cz + along_offset)
+                rotation_y = 90
+
+            light_val = self.light_system.light_at(position[0], position[1], position[2], near_lights)
+            tint = self.light_system.shaded_color(NOTE_LIGHT_RGB, light_val * NOTE_LIGHT_BOOST, NOTE_MIN_LIGHT)
+            note = Entity(
+                model='quad',
+                texture=texture,
+                position=position,
+                rotation=(0, rotation_y, roll),
+                scale=(START_ROOM_WALL_NOTE_SIZE[0], START_ROOM_WALL_NOTE_SIZE[1]),
+                color=tint,
+            )
+            note.setTwoSided(True)
+            note.setTransparency(TransparencyAttrib.MAlpha)
+            entities.append(note)
 
     def add_key_to_drawer(self, entity, drawer_node, drawer_name, bounds_min, bounds_max, position, near_lights):
         room_cell = (round(position[2] / CELL), round(position[0] / CELL))
@@ -752,6 +796,34 @@ class DrawerMixin:
         self.show_held_note(key, note_data)
         return True
 
+    def collect_all_notes_cheat(self):
+        collected_any = False
+        for placement in self.note_placements:
+            room_cell = placement['room_cell']
+            drawer_name = placement['drawer_name']
+            drawer_key = ('drawer', room_cell[0], room_cell[1], drawer_name)
+
+            if drawer_key in self.collected_notes:
+                continue
+
+            self.collected_notes.add(drawer_key)
+            collected_any = True
+
+            drawer = self.active_drawers.get(drawer_key)
+            if drawer:
+                note_data = drawer.get('note')
+                if note_data:
+                    note_data['node'].hide()
+                    self.show_held_note(drawer_key, note_data)
+                    continue
+
+            texture = self.note_textures.get(placement['key'])
+            if texture:
+                self.show_held_note(drawer_key, {'texture': texture})
+
+        if collected_any:
+            self.play_sound(self.paper_get_sound, PAPER_GET_VOLUME)
+
     def consume_key(self):
         if not self.has_key:
             return False
@@ -809,24 +881,44 @@ class DrawerMixin:
         )
         self.held_key_entity.always_on_top = True
 
-    def show_held_note(self, key, note_data):
-        if key in self.held_note_entities:
-            self.held_note_entities[key].enabled = True
-            return
-
-        index = len(self.held_note_entities)
-        x = HELD_NOTE_START_POS[0] + HELD_NOTE_SPACING * index
-        entity = Entity(
+    def _note_ui_node(self, name, index, texture=None, color_rgba=None, bin_sort=101):
+        ux = HELD_NOTE_START_POS[0] + HELD_NOTE_SPACING * index
+        uy = HELD_NOTE_START_POS[1]
+        uz = HELD_NOTE_START_POS[2]
+        np = Entity(
             parent=camera.ui,
             model='quad',
-            position=(x, HELD_NOTE_START_POS[1], HELD_NOTE_START_POS[2]),
-            rotation=(0, 0, 0),
+            position=(ux, uy, uz),
             scale=HELD_NOTE_SCALE,
-            color=color.white,
+            color=color.rgba(*color_rgba) if color_rgba else color.white,
         )
-        entity.model.setTexture(note_data['texture'], 1)
-        entity.always_on_top = True
-        self.held_note_entities[key] = entity
+        if texture:
+            np.model.setTexture(texture, 1)
+        np.setTransparency(TransparencyAttrib.MAlpha)
+        # Ursina camera.ui: x=가로, y=세로, z=렌더링순서
+        # Panda3D setPos:   x=가로, y=렌더링순서, z=세로
+        np.always_on_top = True
+        np.setBin('fixed', bin_sort)
+        np.setDepthWrite(False)
+        np.setDepthTest(False)
+        return np
+
+    def ensure_note_placeholders(self):
+        if self.held_note_placeholders:
+            return
+        for i in range(NOTE_COUNT):
+            ph = self._note_ui_node(f'note_ph_{i}', i, color_rgba=(0.12, 0.12, 0.12, 0.5), bin_sort=100)
+            self.held_note_placeholders.append(ph)
+
+    def show_held_note(self, key, note_data):
+        if key in self.held_note_entities:
+            self.held_note_entities[key].show()
+            return
+
+        self.ensure_note_placeholders()
+        index = len(self.held_note_entities)
+        np = self._note_ui_node(f'held_note_{index}', index, texture=note_data['texture'], bin_sort=101)
+        self.held_note_entities[key] = np
 
     def nearest_drawer_ray_hit(self, origin, ray):
         nearest_kind = None
@@ -910,6 +1002,9 @@ class DrawerMixin:
 
     def update_drawers(self):
         for key, drawer in list(self.active_drawers.items()):
+            if not drawer['entity'].enabled:
+                continue
+
             target = 1.0 if self.drawer_states.get(key, False) else 0.0
             current = drawer['open'] + (target - drawer['open']) * min(1.0, time.dt * DRAWER_OPEN_SPEED)
             drawer['open'] = current

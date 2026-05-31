@@ -24,6 +24,11 @@ from map.map_data import (
 from map.mesh_builder import MeshBuilderMixin
 
 
+VISIBILITY_CACHE_LIMIT = 512
+STATIC_CHUNK_SIZE = 4
+STATIC_CHUNK_PREFETCH_RADIUS = 1
+
+
 class MapRenderer(DoorMixin, MeshBuilderMixin):
     def __init__(self, player, light_system, textures, start_room_cell):
         self.player = player
@@ -33,9 +38,15 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
         self.prebuilt_cells = {}
         self.prebuilt_rooms = {}
         self.prebuilt_lights = {}
+        self.prebuilt_static_chunks = {}
+        self.prebuilt_cell_render_entities = {}
+        self.prebuilt_cell_collision_entities = {}
+        self.prebuilt_room_render_entities = {}
+        self.prebuilt_room_collision_entities = {}
         self._visible_cells = set()
         self._visible_rooms = set()
         self._visible_lights = set()
+        self._visible_static_chunks = set()
         self._collision_cells = set()
         self._collision_rooms = set()
         self.door_states = {}
@@ -56,11 +67,17 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
         self.build_door_lookup()
 
         self._raycast_cache_key = None
+        self._visibility_cache = collections.OrderedDict()
         self._ray_offsets = self.build_ray_offsets()
+        self._open_neighbors = self.build_open_neighbor_cache()
+        self._cells_near_cache = {}
 
         self._hide_cell_queue = collections.deque()
         self._hide_room_queue = collections.deque()
         self._hide_light_queue = collections.deque()
+        self._hide_cell_queued = set()
+        self._hide_room_queued = set()
+        self._hide_light_queued = set()
 
         self.floor_collider = Entity(
             model='cube',
@@ -75,13 +92,19 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
         return r < 0 or r >= ROWS or c < 0 or c >= COLS or LAYOUT[r][c] != 0
 
     def build_static_world(self):
-        mesh_data = self.new_mesh_data()
         layout = LAYOUT
+        chunk_mesh_data = {}
 
         for r in range(ROWS):
             for c in range(COLS):
                 if layout[r][c] != 0:
                     continue
+
+                chunk = (r // STATIC_CHUNK_SIZE, c // STATIC_CHUNK_SIZE)
+                mesh_data = chunk_mesh_data.get(chunk)
+                if mesh_data is None:
+                    mesh_data = self.new_mesh_data()
+                    chunk_mesh_data[chunk] = mesh_data
 
                 near_lights = self.light_system.cell_cache.get((r, c), self.light_system.positions)
                 self.add_subdivided_floor(mesh_data, r, c, near_lights)
@@ -111,10 +134,17 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
                     add_wall = self.add_wall_with_baseboard_gap if has_door else self.add_wall_with_baseboard
                     add_wall(mesh_data, x1, z0, x1, z1, -BASEBOARD_OUT, 0, near_lights, not has_door)
 
-        for data in mesh_data.values():
-            entity = self.add_mesh_entity(data)
-            if entity:
-                self.static_entities.append(entity)
+        chunk_items = list(chunk_mesh_data.items())
+        for chunk, mesh_data in chunk_items:
+            entities = []
+            for data in mesh_data.values():
+                entity = self.add_mesh_entity(data)
+                if entity:
+                    entities.append(entity)
+                    self.static_entities.append(entity)
+
+            if entities:
+                self.prebuilt_static_chunks[chunk] = tuple(entities)
 
     def _build_door_entities(self, r, c):
         entities = []
@@ -179,6 +209,11 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
         return cell
 
     def cells_near(self, center, radius):
+        cache_key = (center, radius)
+        cached = self._cells_near_cache.get(cache_key)
+        if cached is not None:
+            return set(cached)
+
         cr, cc = center
         cells = set()
         layout = LAYOUT
@@ -193,6 +228,7 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
                 if layout[r][c] == 0 and max(ar, abs(c - cc)) <= radius:
                     cells.add((r, c))
 
+        self._cells_near_cache[cache_key] = frozenset(cells)
         return cells
 
     def collision_cells_near_player(self, center):
@@ -213,37 +249,69 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
 
         return rooms
 
+    def preload_room_cells_near_player(self, center):
+        cells = self.cells_near(center, 1)
+        cells.add(self.player_cell())
+        return self.room_candidates_for_cells(cells)
+
     def is_collision_entity(self, entity):
         return getattr(entity, '_collision_entity', False)
 
     def set_render_enabled(self, entities, enabled):
         for entity in entities:
-            if not self.is_collision_entity(entity):
-                entity.enabled = enabled
+            entity.enabled = enabled
 
     def set_collision_enabled(self, entities, enabled):
         for entity in entities:
-            if self.is_collision_entity(entity):
-                entity.enabled = enabled
+            entity.enabled = enabled
+
+    def set_cell_render_enabled(self, cell, enabled):
+        self.set_render_enabled(self.prebuilt_cell_render_entities.get(cell, ()), enabled)
+
+    def static_chunk_for_cell(self, cell):
+        r, c = cell
+        return r // STATIC_CHUNK_SIZE, c // STATIC_CHUNK_SIZE
+
+    def static_chunks_for_cells(self, cells):
+        chunks = set()
+
+        for cell in cells:
+            chunk = self.static_chunk_for_cell(cell)
+            if chunk in self.prebuilt_static_chunks:
+                chunks.add(chunk)
+
+        return chunks
+
+    def prefetch_static_chunks(self, chunks):
+        if STATIC_CHUNK_PREFETCH_RADIUS <= 0:
+            return set(chunks)
+
+        expanded = set(chunks)
+
+        for cr, cc in chunks:
+            for dr in range(-STATIC_CHUNK_PREFETCH_RADIUS, STATIC_CHUNK_PREFETCH_RADIUS + 1):
+                for dc in range(-STATIC_CHUNK_PREFETCH_RADIUS, STATIC_CHUNK_PREFETCH_RADIUS + 1):
+                    chunk = (cr + dr, cc + dc)
+                    if chunk in self.prebuilt_static_chunks:
+                        expanded.add(chunk)
+
+        return expanded
+
+    def set_static_chunk_enabled(self, chunk, enabled):
+        self.set_render_enabled(self.prebuilt_static_chunks.get(chunk, ()), enabled)
 
     def active_collision_entities(self):
         seen = set()
 
         for cell in self._collision_cells:
-            for entity in self.prebuilt_cells.get(cell, ()):
-                if not self.is_collision_entity(entity):
-                    continue
-
+            for entity in self.prebuilt_cell_collision_entities.get(cell, ()):
                 entity_id = id(entity)
                 if entity_id not in seen:
                     seen.add(entity_id)
                     yield entity
 
         for room_cell in self._collision_rooms:
-            for entity in self.prebuilt_rooms.get(room_cell, ()):
-                if not self.is_collision_entity(entity):
-                    continue
-
+            for entity in self.prebuilt_room_collision_entities.get(room_cell, ()):
                 entity_id = id(entity)
                 if entity_id not in seen:
                     seen.add(entity_id)
@@ -282,12 +350,12 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
         return 0.21
 
     def resolve_player_collision(self):
-        HALF_W = 0.21
-        epsilon = 0.004
+        HALF_W = self.player_collision_half_width()
+        epsilon = 0.012
         half_cell = CELL * 0.5
         layout = LAYOUT
 
-        for _ in range(4):
+        for _ in range(8):
             moved = False
             px = self.player.x
             pz = self.player.z
@@ -340,9 +408,11 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
                     continue
 
                 if overlap_x < overlap_z:
-                    px += (1 if dx >= 0 else -1) * (overlap_x + epsilon)
+                    push = 1 if dx >= 0 else -1
+                    px = ex + push * (HALF_W + hx + epsilon)
                 else:
-                    pz += (1 if dz >= 0 else -1) * (overlap_z + epsilon)
+                    push = 1 if dz >= 0 else -1
+                    pz = ez + push * (HALF_W + hz + epsilon)
 
                 moved = True
 
@@ -353,6 +423,12 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
             self.player.z = pz
 
     def expand_cells(self, cells, radius=1):
+        if radius == 1:
+            out = set()
+            for cell in cells:
+                out.update(self._open_neighbors.get(cell, ()))
+            return out
+
         out = set(cells)
 
         for cr, cc in cells:
@@ -365,6 +441,27 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
                         out.add((r, c))
 
         return out
+
+    def build_open_neighbor_cache(self):
+        neighbors = {}
+
+        for r in range(ROWS):
+            for c in range(COLS):
+                visible = []
+
+                for dr in (-1, 0, 1):
+                    nr = r + dr
+                    if nr < 0 or nr >= ROWS:
+                        continue
+
+                    for dc in (-1, 0, 1):
+                        nc = c + dc
+                        if 0 <= nc < COLS and LAYOUT[nr][nc] == 0:
+                            visible.append((nr, nc))
+
+                neighbors[(r, c)] = tuple(visible)
+
+        return neighbors
 
     def cell_center(self, cell):
         r, c = cell
@@ -406,18 +503,32 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
         bz = max(0, min(VISIBILITY_POSITION_BUCKETS - 1, int(local_z * VISIBILITY_POSITION_BUCKETS)))
         return bx, bz
 
-    def visible_cells_raycast(self, center):
+    def visibility_bucket_origin(self, center, position_bucket):
+        r, c = center
+        bx, bz = position_bucket
+        bucket_size = CELL / VISIBILITY_POSITION_BUCKETS
+        x = c * CELL - CELL * 0.5 + (bx + 0.5) * bucket_size
+        z = r * CELL - CELL * 0.5 + (bz + 0.5) * bucket_size
+        return x, z
+
+    def visibility_bucket_forward(self, heading_bucket):
+        step = math.tau / VISIBILITY_HEADING_BUCKETS
+        angle = heading_bucket * step
+        return math.cos(angle), math.sin(angle)
+
+    def visible_cells_raycast(self, center, origin=None, forward=None):
         if center not in self.walkable_cells:
             return set()
 
         visible = {center}
-        fx, fz = self.player_forward_xz()
+        fx, fz = forward if forward is not None else self.player_forward_xz()
         max_dist = RAY_RENDER_DISTANCE
         layout = LAYOUT
         half_cell = CELL * 0.5
         door_set = self._door_set
+        open_neighbors = self._open_neighbors
 
-        ray_ox, ray_oz = self.player.x, self.player.z
+        ray_ox, ray_oz = origin if origin is not None else (self.player.x, self.player.z)
 
         for ca, sa in self._ray_offsets:
             dx = fx * ca - fz * sa
@@ -451,11 +562,7 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
                 if layout[r][c] == 0:
                     visible.add((r, c))
                 else:
-                    for _ndr in range(-1, 2):
-                        for _ndc in range(-1, 2):
-                            _nr, _nc = r + _ndr, c + _ndc
-                            if 0 <= _nr < ROWS and 0 <= _nc < COLS and layout[_nr][_nc] == 0:
-                                visible.add((_nr, _nc))
+                    visible.update(open_neighbors[(r, c)])
 
             prev_r, prev_c, prev_face = r, c, face_x
 
@@ -477,11 +584,7 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
                     break
 
                 if layout[r][c] == 1:
-                    for dr in range(-1, 2):
-                        for dc in range(-1, 2):
-                            nr, nc = r + dr, c + dc
-                            if 0 <= nr < ROWS and 0 <= nc < COLS and layout[nr][nc] == 0:
-                                visible.add((nr, nc))
+                    visible.update(open_neighbors[(r, c)])
                     if layout[prev_r][prev_c] == 0 and (prev_r, prev_c, prev_face) in door_set:
                         pass
                     else:
@@ -598,28 +701,54 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
     def update_rendered_scene(self, force=False):
         current = self.effective_player_cell()
         fx, fz = self.player_forward_xz()
-        cache_key = (current, self.visibility_position_bucket(), self.visibility_heading_bucket(fx, fz))
+        position_bucket = self.visibility_position_bucket()
+        heading_bucket = self.visibility_heading_bucket(fx, fz)
+        cache_key = (current, position_bucket, heading_bucket)
 
         if not force and cache_key == self._raycast_cache_key:
             return
 
         self._raycast_cache_key = cache_key
-        wanted_cells = self.visible_cells_raycast(current)
-        wanted_cells |= self.cells_near(current, 2)
-        wanted_rooms = self.room_candidates_for_cells(wanted_cells)
-        wanted_lights = wanted_cells & self.light_system.cell_set
+        cached_visibility = self._visibility_cache.get(cache_key)
+        if cached_visibility is None:
+            origin = self.visibility_bucket_origin(current, position_bucket)
+            forward = self.visibility_bucket_forward(heading_bucket)
+            wanted_cells = set(self.visible_cells_raycast(current, origin, forward))
+            wanted_cells |= self.cells_near(current, 2)
+            cached_visibility = (
+                frozenset(wanted_cells),
+                frozenset(self.room_candidates_for_cells(wanted_cells)),
+                frozenset(wanted_cells & self.light_system.cell_set),
+                frozenset(self.prefetch_static_chunks(self.static_chunks_for_cells(wanted_cells))),
+            )
+            self._visibility_cache[cache_key] = cached_visibility
+            if len(self._visibility_cache) > VISIBILITY_CACHE_LIMIT:
+                self._visibility_cache.popitem(last=False)
+        else:
+            self._visibility_cache.move_to_end(cache_key)
+
+        cached_cells, cached_rooms, cached_lights, cached_static_chunks = cached_visibility
+        wanted_cells = set(cached_cells)
+        wanted_rooms = set(cached_rooms)
+        wanted_lights = set(cached_lights)
+        wanted_static_chunks = set(cached_static_chunks)
+        wanted_rooms |= self.preload_room_cells_near_player(current)
         collision_cells = self.collision_cells_near_player(current)
         collision_rooms = self.active_room_collision_cells(collision_cells)
 
         if force:
+            for chunk in self._visible_static_chunks - wanted_static_chunks:
+                self.set_static_chunk_enabled(chunk, False)
+            for chunk in wanted_static_chunks - self._visible_static_chunks:
+                self.set_static_chunk_enabled(chunk, True)
             for cell in self._visible_cells - wanted_cells:
-                self.set_render_enabled(self.prebuilt_cells.get(cell, []), False)
+                self.set_cell_render_enabled(cell, False)
             for cell in wanted_cells - self._visible_cells:
-                self.set_render_enabled(self.prebuilt_cells.get(cell, []), True)
+                self.set_cell_render_enabled(cell, True)
             for room_cell in self._visible_rooms - wanted_rooms:
-                self.set_render_enabled(self.prebuilt_rooms.get(room_cell, []), False)
+                self.set_render_enabled(self.prebuilt_room_render_entities.get(room_cell, ()), False)
             for room_cell in wanted_rooms - self._visible_rooms:
-                self.set_render_enabled(self.prebuilt_rooms.get(room_cell, []), True)
+                self.set_render_enabled(self.prebuilt_room_render_entities.get(room_cell, ()), True)
             for cell in self._visible_lights - wanted_lights:
                 for entity in self.prebuilt_lights.get(cell, []):
                     entity.enabled = False
@@ -627,35 +756,49 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
                 for entity in self.prebuilt_lights.get(cell, []):
                     entity.enabled = True
         else:
+            for chunk in self._visible_static_chunks - wanted_static_chunks:
+                self.set_static_chunk_enabled(chunk, False)
+            for chunk in wanted_static_chunks - self._visible_static_chunks:
+                self.set_static_chunk_enabled(chunk, True)
             for cell in self._visible_cells - wanted_cells:
-                self._hide_cell_queue.append(cell)
+                if cell not in self._hide_cell_queued:
+                    self._hide_cell_queue.append(cell)
+                    self._hide_cell_queued.add(cell)
             for cell in wanted_cells - self._visible_cells:
-                self.set_render_enabled(self.prebuilt_cells.get(cell, []), True)
+                self._hide_cell_queued.discard(cell)
+                self.set_cell_render_enabled(cell, True)
             for room_cell in self._visible_rooms - wanted_rooms:
-                self._hide_room_queue.append(room_cell)
+                if room_cell not in self._hide_room_queued:
+                    self._hide_room_queue.append(room_cell)
+                    self._hide_room_queued.add(room_cell)
             for room_cell in wanted_rooms - self._visible_rooms:
-                self.set_render_enabled(self.prebuilt_rooms.get(room_cell, []), True)
+                self._hide_room_queued.discard(room_cell)
+                self.set_render_enabled(self.prebuilt_room_render_entities.get(room_cell, ()), True)
             for cell in self._visible_lights - wanted_lights:
-                self._hide_light_queue.append(cell)
+                if cell not in self._hide_light_queued:
+                    self._hide_light_queue.append(cell)
+                    self._hide_light_queued.add(cell)
             for cell in wanted_lights - self._visible_lights:
+                self._hide_light_queued.discard(cell)
                 for entity in self.prebuilt_lights.get(cell, []):
                     entity.enabled = True
 
         for cell in self._collision_cells - collision_cells:
-            self.set_collision_enabled(self.prebuilt_cells.get(cell, []), False)
+            self.set_collision_enabled(self.prebuilt_cell_collision_entities.get(cell, ()), False)
 
         for cell in collision_cells - self._collision_cells:
-            self.set_collision_enabled(self.prebuilt_cells.get(cell, []), True)
+            self.set_collision_enabled(self.prebuilt_cell_collision_entities.get(cell, ()), True)
 
         for room_cell in self._collision_rooms - collision_rooms:
-            self.set_collision_enabled(self.prebuilt_rooms.get(room_cell, []), False)
+            self.set_collision_enabled(self.prebuilt_room_collision_entities.get(room_cell, ()), False)
 
         for room_cell in collision_rooms - self._collision_rooms:
-            self.set_collision_enabled(self.prebuilt_rooms.get(room_cell, []), True)
+            self.set_collision_enabled(self.prebuilt_room_collision_entities.get(room_cell, ()), True)
 
         self._visible_cells = wanted_cells
         self._visible_rooms = wanted_rooms
         self._visible_lights = wanted_lights
+        self._visible_static_chunks = wanted_static_chunks
         self._collision_cells = collision_cells
         self._collision_rooms = collision_rooms
 
@@ -667,22 +810,61 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
         remaining = SHOW_PER_FRAME
         while self._hide_cell_queue and remaining > 0:
             cell = self._hide_cell_queue.popleft()
+            self._hide_cell_queued.discard(cell)
             if cell not in visible_cells:
-                self.set_render_enabled(self.prebuilt_cells.get(cell, []), False)
+                self.set_cell_render_enabled(cell, False)
             remaining -= 1
 
         remaining = SHOW_PER_FRAME
         while self._hide_room_queue and remaining > 0:
             room_cell = self._hide_room_queue.popleft()
+            self._hide_room_queued.discard(room_cell)
             if room_cell not in visible_rooms:
-                self.set_render_enabled(self.prebuilt_rooms.get(room_cell, []), False)
+                self.set_render_enabled(self.prebuilt_room_render_entities.get(room_cell, ()), False)
             remaining -= 1
 
-        while self._hide_light_queue:
+        remaining = SHOW_PER_FRAME
+        while self._hide_light_queue and remaining > 0:
             cell = self._hide_light_queue.popleft()
+            self._hide_light_queued.discard(cell)
             if cell not in visible_lights:
                 for entity in self.prebuilt_lights.get(cell, []):
                     entity.enabled = False
+            remaining -= 1
+
+    def split_entity_groups(self, groups):
+        render_groups = {}
+        collision_groups = {}
+
+        for key, entities in groups.items():
+            render_entities = []
+            collision_entities = []
+
+            for entity in entities:
+                if self.is_collision_entity(entity):
+                    collision_entities.append(entity)
+                else:
+                    render_entities.append(entity)
+
+            render_groups[key] = tuple(render_entities)
+            collision_groups[key] = tuple(collision_entities)
+
+        return render_groups, collision_groups
+
+    def disable_prebuilt_dynamic_entities(self):
+        for entities in self.prebuilt_static_chunks.values():
+            self.set_render_enabled(entities, False)
+        for entities in self.prebuilt_cell_render_entities.values():
+            self.set_render_enabled(entities, False)
+        for entities in self.prebuilt_room_render_entities.values():
+            self.set_render_enabled(entities, False)
+        for entities in self.prebuilt_cell_collision_entities.values():
+            self.set_collision_enabled(entities, False)
+        for entities in self.prebuilt_room_collision_entities.values():
+            self.set_collision_enabled(entities, False)
+        for light_entities in self.prebuilt_lights.values():
+            for entity in light_entities:
+                entity.enabled = False
 
     def initial_render(self):
         self.build_static_world()
@@ -698,11 +880,24 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
                 for room_cell in self._cell_door_rooms.get((r, c), set()):
                     all_room_cells.add(room_cell)
 
-        for room_cell in all_room_cells:
+        room_cells = list(all_room_cells)
+        for room_cell in room_cells:
             entities = self.build_door_room(room_cell)
             self.prebuilt_rooms[room_cell] = entities
 
-        for cell in self.light_system.cell_set:
+        light_cells = list(self.light_system.cell_set)
+        for cell in light_cells:
             r, c = cell
             entities = self.light_system.add_fixture(r, c)
             self.prebuilt_lights[cell] = entities
+
+        (
+            self.prebuilt_cell_render_entities,
+            self.prebuilt_cell_collision_entities,
+        ) = self.split_entity_groups(self.prebuilt_cells)
+        (
+            self.prebuilt_room_render_entities,
+            self.prebuilt_room_collision_entities,
+        ) = self.split_entity_groups(self.prebuilt_rooms)
+        self.disable_prebuilt_dynamic_entities()
+        self.update_rendered_scene(force=True)

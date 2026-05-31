@@ -16,6 +16,7 @@ from character.monster import MonsterAI
 from character.player_controller import CAMERA_FOV, RUN_SPEED, HeadBob, create_player
 from furniture.door import DOOR_DENSITY, DOOR_FACE_SALTS
 from game_clear import GameClearSequence
+from main_menu import MainMenu, PauseMenu
 from map.game_map import MapRenderer
 from map.light import LightSystem
 from map.map_data import CELL, LAYOUT, START_ROOM_CELL, WALL_H
@@ -43,6 +44,7 @@ EXIT_BACKGROUND = color.Color(1.0, 1.0, 1.0, 1.0)
 NOISE_FOOTSTEP_STRENGTH = 0.3
 JUMPSCARE_SCREEN_PAD = 0.08
 JUMPSCARE_PLAY_TIME = 3
+JUMPSCARE_LOOK_TIME = 0.10
 JUMPSCARE_MIN_DISTANCE = 1.0
 JUMPSCARE_MAX_DISTANCE = 14.0
 JUMPSCARE_MIN_VOLUME = 0.65
@@ -56,10 +58,16 @@ MAX_PLAYER_HEARTS = 3
 DEATH_HEART_ANIM_TIME = 1.0
 DEATH_GAME_OVER_DELAY = 0.45
 VENT_VOLUME = 0.60
+MENU_MUSIC_VOLUME = 0.72
+MENU_MUSIC_FADE_TIME = 2.0
+GAME_START_FADE_TIME = 1.6
 MONSTER_SPAWN_COUNT = 4
 MONSTER_SPAWN_MIN_DISTANCE = 20
 MONSTER_SPAWN_MIN_SEPARATION = 8
 MONSTER_FINAL_NOTE_SPEED_MULTIPLIER = 1.25
+ZOOM_KEY = 'z'
+ZOOM_TIME = 0.5
+ZOOM_FOV = CAMERA_FOV * 0.5
 
 
 def rgba(r, g, b, a):
@@ -69,6 +77,12 @@ def rgba(r, g, b, a):
 def smoothstep01(value):
     value = max(0.0, min(1.0, value))
     return value * value * (3.0 - 2.0 * value)
+
+
+def move_towards(current, target, step):
+    if current < target:
+        return min(target, current + step)
+    return max(target, current - step)
 
 
 def lerp_color(start, end, amount):
@@ -99,6 +113,15 @@ def set_audio_rate(sound, rate):
                 return
             except Exception:
                 pass
+
+
+def update_camera_zoom(active=True):
+    global zoom_amount
+
+    target = 1.0 if active and held_keys[ZOOM_KEY] else 0.0
+    zoom_amount = move_towards(zoom_amount, target, time.dt / ZOOM_TIME)
+    amount = smoothstep01(zoom_amount)
+    camera.fov = CAMERA_FOV + (ZOOM_FOV - CAMERA_FOV) * amount
 
 
 def heartbeat_targets(monster):
@@ -145,7 +168,21 @@ def set_monster_active(monster, active):
         monster.silence_all_sounds()
 
 
+def start_door_opened():
+    if map_renderer is None:
+        return False
+    key = getattr(map_renderer, '_first_lockable_door_key', None)
+    if key is None:
+        return True
+    return map_renderer.door_states.get(key, False)
+
+
 def update_monster_pressure():
+    if not start_door_opened():
+        for monster in monsters:
+            set_monster_active(monster, False)
+        return
+
     note_count = collected_note_count()
     active_count = target_active_monster_count(note_count)
     speed_multiplier = MONSTER_FINAL_NOTE_SPEED_MULTIPLIER if note_count >= 5 else 1.0
@@ -227,6 +264,8 @@ def update_jumpscares():
         jumpscare_sound.play()
         jumpscare_timer = JUMPSCARE_PLAY_TIME
         jumpscare_monster = monster
+        if close_trigger and not seen_trigger:
+            start_jumpscare_look(monster)
         break
 
     if jumpscare_timer > 0.0:
@@ -234,6 +273,56 @@ def update_jumpscares():
         if jumpscare_timer <= 0.0:
             jumpscare_sound.stop()
             jumpscare_monster = None
+
+
+def shortest_angle_delta(target, current):
+    return (target - current + 180.0) % 360.0 - 180.0
+
+
+def camera_pivot_pitch():
+    return float(getattr(player.camera_pivot, 'rotation_x', 0.0))
+
+
+def monster_look_angles(monster):
+    dx = monster.entity.x - player.x
+    dz = monster.entity.z - player.z
+    horizontal = max((dx * dx + dz * dz) ** 0.5, 0.001)
+    camera_y = player.y + getattr(player.camera_pivot, 'y', 1.15)
+    dy = monster.entity.y - camera_y
+    yaw = math.degrees(math.atan2(dx, dz))
+    pitch = -math.degrees(math.atan2(dy, horizontal))
+    return yaw, max(-88.0, min(88.0, pitch))
+
+
+def start_jumpscare_look(monster):
+    global jumpscare_look_timer, jumpscare_look_start_yaw, jumpscare_look_target_yaw
+    global jumpscare_look_start_pitch, jumpscare_look_target_pitch
+
+    target_yaw, target_pitch = monster_look_angles(monster)
+    jumpscare_look_timer = JUMPSCARE_LOOK_TIME
+    jumpscare_look_start_yaw = float(player.rotation_y)
+    jumpscare_look_target_yaw = jumpscare_look_start_yaw + shortest_angle_delta(target_yaw, jumpscare_look_start_yaw)
+    jumpscare_look_start_pitch = camera_pivot_pitch()
+    jumpscare_look_target_pitch = target_pitch
+
+
+def update_jumpscare_look():
+    global jumpscare_look_timer
+
+    if jumpscare_look_timer <= 0.0:
+        return
+
+    elapsed = JUMPSCARE_LOOK_TIME - jumpscare_look_timer
+    amount = smoothstep01(elapsed / JUMPSCARE_LOOK_TIME)
+    player.rotation_y = jumpscare_look_start_yaw + (jumpscare_look_target_yaw - jumpscare_look_start_yaw) * amount
+    player.camera_pivot.rotation_x = jumpscare_look_start_pitch + (
+        jumpscare_look_target_pitch - jumpscare_look_start_pitch
+    ) * amount
+
+    jumpscare_look_timer = max(0.0, jumpscare_look_timer - time.dt)
+    if jumpscare_look_timer <= 0.0:
+        player.rotation_y = jumpscare_look_target_yaw
+        player.camera_pivot.rotation_x = jumpscare_look_target_pitch
 
 
 def jumpscare_volume_for(monster):
@@ -263,6 +352,7 @@ def reset_player_to_start():
     player.speed = 0
     player.camera_pivot.x = 0
     player.camera_pivot.y = head_bob.base_pivot_y
+    player.camera_pivot.rotation_x = 0
     camera.rotation = (0, 0, 0)
     head_bob.current_speed = 0.0
     head_bob.run_blend = 0.0
@@ -299,10 +389,11 @@ def player_start_pose():
 
 
 def reset_run_after_death():
-    global jumpscare_timer, jumpscare_monster, heartbeat_rate, minimap_visible
+    global jumpscare_timer, jumpscare_monster, heartbeat_rate, minimap_visible, jumpscare_look_timer
 
     jumpscare_timer = 0.0
     jumpscare_monster = None
+    jumpscare_look_timer = 0.0
     jumpscare_sound.stop()
     vent_ambience.volume = 0.0
     vent_ambience.stop()
@@ -313,6 +404,9 @@ def reset_run_after_death():
 
     reset_player_to_start()
     map_renderer.reset_start_room_lock_and_key()
+    map_renderer._raycast_cache_key = None
+    map_renderer.update_rendered_scene(force=True)
+    map_renderer.process_queues()
 
     for monster, spawn_cell in zip(monsters, pick_monster_spawn_cells(len(monsters))):
         monster.reset_to_cell(spawn_cell)
@@ -472,7 +566,8 @@ def random_start_room_cell():
     return random.choice(candidates) if candidates else START_ROOM_CELL
 
 
-def pick_monster_spawn_cells(count):
+def pick_monster_spawn_cells(count, start_cell=None):
+    start_cell = start_cell or START_ROOM_CELL_RUNTIME
     base_candidates = [
         (r, c)
         for r, row in enumerate(LAYOUT)
@@ -483,7 +578,7 @@ def pick_monster_spawn_cells(count):
     candidates = [
         cell
         for cell in base_candidates
-        if cell_grid_distance(cell, START_ROOM_CELL_RUNTIME) >= MONSTER_SPAWN_MIN_DISTANCE
+        if cell_grid_distance(cell, start_cell) >= MONSTER_SPAWN_MIN_DISTANCE
     ]
     if not candidates:
         candidates = base_candidates[:]
@@ -621,88 +716,310 @@ camera.fov = CAMERA_FOV
 scene.fog_color = DARK_COLOR
 scene.fog_density = 0
 
-textures = load_environment_textures()
-light_system = LightSystem(LAYOUT, CELL, WALL_H)
-START_ROOM_CELL_RUNTIME = random_start_room_cell()
-player = create_player(CELL, *START_ROOM_CELL_RUNTIME, spawn_yaw=-90)
-footstep_sounds = [
-    Audio(f'asset/sound/foot{i}.wav', autoplay=False, volume=0.60)
-    for i in range(1, 4)
-]
-head_bob = HeadBob(player, footstep_sounds, lambda: emit_noise(NOISE_FOOTSTEP_STRENGTH))
-map_renderer = MapRenderer(player, light_system, textures, START_ROOM_CELL_RUNTIME)
-reset_player_to_start()
-monster_textures = [
-    'asset/texture/obunga.png',
-    'asset/texture/obunga2.png',
-    'asset/texture/obunga3.png',
-    'asset/texture/obunga4.png',
-]
-monster_specs = list(zip(monster_textures, pick_monster_spawn_cells(MONSTER_SPAWN_COUNT)))
-monsters = [
-    MonsterAI(
-        player,
-        LAYOUT,
-        CELL,
-        PROJECT_DIR,
-        spawn_cell=spawn_cell,
-        texture=texture,
-        chase_speed=RUN_SPEED * 8,
-    )
-    for texture, spawn_cell in monster_specs
-]
-for monster in monsters:
-    monster.set_door_system(map_renderer, MONSTER_SPAWN_MIN_DISTANCE)
-update_monster_pressure()
-post_effects = PostEffects()
-
-minimap = Minimap(
-    LAYOUT,
-    CELL,
-    player,
-    monsters,
-    map_renderer._cell_door_rooms,
-    enabled=MINIMAP_ENABLED,
-)
-crosshair = DoorCrosshair()
-death_overlay = Entity(
-    parent=camera.ui,
-    model='quad',
-    color=rgba(0, 0, 0, 0),
-    position=(0, 0, -0.95),
-    scale=(2.2, 2.2),
-    enabled=False,
-)
-death_overlay.always_on_top = True
-death_screen = DeathScreen()
+textures = None
+light_system = None
+START_ROOM_CELL_RUNTIME = START_ROOM_CELL
+player = None
+footstep_sounds = []
+head_bob = None
+map_renderer = None
+monsters = []
+post_effects = None
+minimap = None
+crosshair = None
+death_overlay = None
+death_screen = None
 death_state = 'alive'
 death_timer = 0.0
 player_hearts = MAX_PLAYER_HEARTS
 death_lost_heart_index = None
 game_clear_sequence = None
+game_state = 'menu'
+menu_music = None
+menu_music_fade_timer = 0.0
+game_start_fade_timer = 0.0
+game_start_fade_active = False
+zoom_amount = 0.0
 
 _amb = Panda3dAmbientLight('ambient')
 _amb.setColor((0.0, 0.0, 0.0, 1.0))
 render_root.setLight(render_root.attachNewNode(_amb))
 
-guide_text = Text(
-    text='THE BACKROOMS  |  WASD: Move   Mouse: Look   E: Door   ESC: Quit',
-    origin=(0, 0),
-    position=(0, -0.46),
-    scale=0.65,
-    color=rgba(210, 195, 95, 110),
-)
-vent_ambience = Audio('asset/sound/vent.wav', loop=True, autoplay=True, volume=VENT_VOLUME)
-sonar_sound = Audio('asset/sound/sonar.wav', autoplay=False, volume=0.78)
-heartbeat_sound = Audio('asset/sound/heartbeat.wav', loop=True, autoplay=True, volume=HEARTBEAT_IDLE_VOLUME)
-jumpscare_sound = Audio('asset/sound/jumpscare.wav', autoplay=False, volume=2.5)
+guide_text = None
+vent_ambience = None
+sonar_sound = None
+heartbeat_sound = None
+jumpscare_sound = None
 jumpscare_timer = 0.0
 jumpscare_monster = None
+jumpscare_look_timer = 0.0
+jumpscare_look_start_yaw = 0.0
+jumpscare_look_target_yaw = 0.0
+jumpscare_look_start_pitch = 0.0
+jumpscare_look_target_pitch = 0.0
 heartbeat_rate = HEARTBEAT_IDLE_RATE
-set_audio_rate(heartbeat_sound, heartbeat_rate)
 minimap_scan_was_down = False
 minimap_tab_was_down = False
 minimap_visible = False
+
+
+def set_system_cursor_visible(visible):
+    mouse.locked = not visible
+    mouse.visible = visible
+
+    window_cursor = getattr(window, 'cursor', None)
+    if window_cursor is not None and hasattr(window_cursor, 'visible'):
+        window_cursor.visible = visible
+
+
+def start_menu_music():
+    global menu_music
+
+    if menu_music is None:
+        menu_music = Audio('asset/sound/mainmenu.wav', loop=True, autoplay=False, volume=MENU_MUSIC_VOLUME)
+
+    menu_music.volume = MENU_MUSIC_VOLUME
+    menu_music.play()
+
+
+def start_menu_music_fadeout():
+    global menu_music_fade_timer
+
+    menu_music_fade_timer = MENU_MUSIC_FADE_TIME
+
+
+def update_menu_music_fade():
+    global menu_music_fade_timer
+
+    if menu_music_fade_timer <= 0.0 or menu_music is None:
+        return
+
+    menu_music_fade_timer = max(0.0, menu_music_fade_timer - time.dt)
+    amount = menu_music_fade_timer / MENU_MUSIC_FADE_TIME
+    menu_music.volume = MENU_MUSIC_VOLUME * smoothstep01(amount)
+
+    if menu_music_fade_timer <= 0.0:
+        menu_music.stop()
+
+
+def start_game_fadein():
+    global game_start_fade_timer, game_start_fade_active
+
+    game_start_fade_timer = GAME_START_FADE_TIME
+    game_start_fade_active = True
+    set_death_overlay_alpha(1.0)
+
+
+def update_game_start_fadein():
+    global game_start_fade_timer, game_start_fade_active
+
+    if not game_start_fade_active:
+        return
+
+    game_start_fade_timer = max(0.0, game_start_fade_timer - min(time.dt, 1 / 20))
+    alpha = game_start_fade_timer / GAME_START_FADE_TIME
+    set_death_overlay_alpha(alpha)
+
+    fade_in = 1.0 - alpha
+    if vent_ambience:
+        vent_ambience.volume = VENT_VOLUME * fade_in
+    if heartbeat_sound:
+        heartbeat_sound.volume = HEARTBEAT_IDLE_VOLUME * fade_in
+
+    if game_start_fade_timer <= 0.0:
+        game_start_fade_active = False
+        set_death_overlay_alpha(0.0)
+        if vent_ambience:
+            vent_ambience.volume = VENT_VOLUME
+        if heartbeat_sound:
+            heartbeat_sound.volume = HEARTBEAT_IDLE_VOLUME
+
+
+def initialize_game():
+    global textures, light_system, START_ROOM_CELL_RUNTIME, player, footstep_sounds
+    global head_bob, map_renderer, monsters, post_effects, minimap, crosshair
+    global death_overlay, death_screen, game_clear_sequence, guide_text
+    global vent_ambience, sonar_sound, heartbeat_sound, jumpscare_sound
+    global death_state, death_timer, player_hearts, death_lost_heart_index
+    global jumpscare_timer, jumpscare_monster, jumpscare_look_timer, heartbeat_rate
+
+    if game_clear_sequence is not None:
+        return
+
+    textures = load_environment_textures()
+    light_system = LightSystem(LAYOUT, CELL, WALL_H)
+    START_ROOM_CELL_RUNTIME = random_start_room_cell()
+    player = create_player(CELL, *START_ROOM_CELL_RUNTIME, spawn_yaw=-90)
+    footstep_sounds = [
+        Audio(f'asset/sound/foot{i}.wav', autoplay=False, volume=0.60)
+        for i in range(1, 4)
+    ]
+    head_bob = HeadBob(player, footstep_sounds, lambda: emit_noise(NOISE_FOOTSTEP_STRENGTH))
+    map_renderer = MapRenderer(player, light_system, textures, START_ROOM_CELL_RUNTIME)
+    reset_player_to_start()
+
+    monster_textures = [
+        'asset/texture/obunga.png',
+        'asset/texture/obunga2.png',
+        'asset/texture/obunga3.png',
+        'asset/texture/obunga4.png',
+    ]
+    monster_specs = list(zip(monster_textures, pick_monster_spawn_cells(MONSTER_SPAWN_COUNT)))
+    monsters = [
+        MonsterAI(
+            player,
+            LAYOUT,
+            CELL,
+            PROJECT_DIR,
+            spawn_cell=spawn_cell,
+            texture=texture,
+            chase_speed=RUN_SPEED * 5,
+        )
+        for texture, spawn_cell in monster_specs
+    ]
+    for monster in monsters:
+        monster.set_door_system(map_renderer, MONSTER_SPAWN_MIN_DISTANCE)
+    update_monster_pressure()
+    post_effects = PostEffects()
+
+    minimap = Minimap(
+        LAYOUT,
+        CELL,
+        player,
+        monsters,
+        map_renderer._cell_door_rooms,
+        enabled=False,
+    )
+    crosshair = DoorCrosshair()
+    death_overlay = Entity(
+        parent=camera.ui,
+        model='quad',
+        color=rgba(0, 0, 0, 0),
+        position=(0, 0, -0.95),
+        scale=(2.2, 2.2),
+        enabled=False,
+    )
+    death_overlay.always_on_top = True
+    death_screen = DeathScreen()
+    death_state = 'alive'
+    death_timer = 0.0
+    player_hearts = MAX_PLAYER_HEARTS
+    death_lost_heart_index = None
+    jumpscare_timer = 0.0
+    jumpscare_monster = None
+    jumpscare_look_timer = 0.0
+    heartbeat_rate = HEARTBEAT_IDLE_RATE
+
+    guide_text = Text(
+        text='THE BACKROOMS  |  WASD: Move   Mouse: Look   E: Door   ESC: Pause',
+        origin=(0, 0),
+        position=(0, -0.46),
+        scale=0.975,
+        color=rgba(210, 195, 95, 110),
+        enabled=False,
+    )
+    vent_ambience = Audio('asset/sound/vent.wav', loop=True, autoplay=False, volume=0.0)
+    sonar_sound = Audio('asset/sound/sonar.wav', autoplay=False, volume=0.78)
+    heartbeat_sound = Audio('asset/sound/heartbeat.wav', loop=True, autoplay=False, volume=0.0)
+    jumpscare_sound = Audio('asset/sound/jumpscare.wav', autoplay=False, volume=2.5)
+    set_audio_rate(heartbeat_sound, heartbeat_rate)
+
+    map_renderer.initial_render()
+
+    game_clear_sequence = GameClearSequence(
+        player,
+        map_renderer,
+        CELL,
+        vent_ambience,
+        heartbeat_sound,
+        crosshair,
+        minimap,
+        fade_monster_sounds,
+        update_exit_background,
+        post_effects,
+        guide_text,
+    )
+
+    vent_ambience.play()
+    heartbeat_sound.play()
+
+
+def suspend_gameplay_for_menu():
+    if player is None:
+        set_system_cursor_visible(True)
+        return
+
+    player.enabled = False
+    player.speed = 0
+    head_bob.current_speed = 0.0
+    player.mouse_sensitivity = Vec2(0, 0)
+    set_system_cursor_visible(True)
+    player.cursor.visible = False
+    crosshair.set_visible(False)
+    minimap.set_enabled(False)
+
+
+def start_game():
+    global game_state
+
+    if game_state == 'loading':
+        return
+
+    game_state = 'loading'
+    main_menu.set_mode('loading')
+    set_system_cursor_visible(True)
+    start_menu_music_fadeout()
+    invoke(finish_start_game, delay=0.35)
+
+
+def finish_start_game():
+    global game_state
+
+    initialize_game()
+    update_camera_zoom(False)
+    game_state = 'playing'
+    main_menu.set_visible(False)
+    player.enabled = True
+    player.mouse_sensitivity = Vec2(35, 35)
+    set_system_cursor_visible(False)
+    player.cursor.visible = False
+    minimap.set_enabled(minimap_visible)
+    start_game_fadein()
+
+
+def pause_game():
+    global game_state
+
+    if player is None:
+        return
+
+    update_camera_zoom(False)
+    game_state = 'paused'
+    player.enabled = False
+    player.speed = 0
+    head_bob.current_speed = 0.0
+    player.mouse_sensitivity = Vec2(0, 0)
+    set_system_cursor_visible(True)
+    player.cursor.visible = False
+    crosshair.set_visible(False)
+    minimap.set_enabled(False)
+    pause_menu.set_visible(True)
+
+
+def resume_game():
+    global game_state
+
+    if player is None:
+        return
+
+    update_camera_zoom(False)
+    game_state = 'playing'
+    pause_menu.set_visible(False)
+    player.enabled = True
+    player.mouse_sensitivity = Vec2(35, 35)
+    set_system_cursor_visible(False)
+    player.cursor.visible = False
+    minimap.set_enabled(minimap_visible)
 
 
 def update_exit_background():
@@ -730,37 +1047,41 @@ def update_exit_background():
     return show_exit_background
 
 
-map_renderer.initial_render()
-game_clear_sequence = GameClearSequence(
-    player,
-    map_renderer,
-    CELL,
-    vent_ambience,
-    heartbeat_sound,
-    crosshair,
-    minimap,
-    fade_monster_sounds,
-    update_exit_background,
-    post_effects,
-    guide_text,
-)
+main_menu = MainMenu(start_game)
+pause_menu = PauseMenu(resume_game, application.quit)
+suspend_gameplay_for_menu()
+start_menu_music()
 
 
 def update():
     global heartbeat_rate, minimap_scan_was_down, minimap_tab_was_down, minimap_visible
 
+    update_menu_music_fade()
+
+    if game_state == 'paused':
+        update_camera_zoom(False)
+        pause_menu.update()
+        return
+
+    if game_state != 'playing':
+        update_camera_zoom(False)
+        main_menu.update()
+        return
+
     if game_clear_sequence.update():
+        update_camera_zoom(False)
         if held_keys['escape']:
             application.quit()
         return
 
     if update_death_sequence():
+        update_camera_zoom(False)
         if held_keys['escape']:
             application.quit()
         return
 
-    # map_renderer.update_rendered_scene()
-    # map_renderer.process_queues()
+    map_renderer.update_rendered_scene()
+    map_renderer.process_queues()
     map_renderer.update_doors()
     map_renderer.update_drawers()
     map_renderer.resolve_player_collision()
@@ -777,6 +1098,7 @@ def update():
     update_jumpscares()
     update_player_caught()
     if death_state != 'alive':
+        update_camera_zoom(False)
         return
 
     minimap_scan_down = held_keys['r']
@@ -794,10 +1116,12 @@ def update():
 
     minimap.update()
     crosshair.update(map_renderer.can_interact(), minimap_visible)
-    nearest_monster = min(active_monsters(), key=lambda monster: monster.distance_to_player())
+    active = active_monsters()
+    nearest_monster = min(active if active else monsters, key=lambda monster: monster.distance_to_player())
     target_heartbeat_volume, target_heartbeat_rate = heartbeat_targets(nearest_monster)
     heartbeat_lerp = min(1.0, time.dt * HEARTBEAT_SMOOTHING)
-    heartbeat_sound.volume += (target_heartbeat_volume - heartbeat_sound.volume) * heartbeat_lerp
+    if not game_start_fade_active:
+        heartbeat_sound.volume += (target_heartbeat_volume - heartbeat_sound.volume) * heartbeat_lerp
     heartbeat_rate += (target_heartbeat_rate - heartbeat_rate) * heartbeat_lerp
     set_audio_rate(heartbeat_sound, heartbeat_rate)
 
@@ -816,10 +1140,9 @@ def update():
             post_effects.set_threat(0.0)
         post_effects.update()
     head_bob.update()
-    camera.fov = CAMERA_FOV
-
-    if held_keys['escape']:
-        application.quit()
+    update_jumpscare_look()
+    update_game_start_fadein()
+    update_camera_zoom()
 
 
 def teleport_to_exit_door_debug():
@@ -843,11 +1166,27 @@ def teleport_to_exit_door_debug():
 
 
 def input(key):
+    if game_state == 'paused':
+        pause_menu.handle_key(key)
+        return
+
+    if game_state != 'playing':
+        main_menu.handle_key(key)
+        return
+
     if game_clear_sequence.is_active():
+        return
+
+    if key == 'escape':
+        pause_game()
         return
 
     if key == '1':
         teleport_to_exit_door_debug()
+        return
+
+    if key == '2':
+        map_renderer.collect_all_notes_cheat()
         return
 
     if key == 'e':
