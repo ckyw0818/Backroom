@@ -3,6 +3,7 @@ import random
 
 from ursina import Vec2, camera, held_keys, time
 from ursina.prefabs.first_person_controller import FirstPersonController
+from utill.audio import play_transient_sound
 
 PLAYER_H = 1.15
 CAMERA_FOV = 80
@@ -60,9 +61,8 @@ class HeadBob:
         if not self.footstep_sounds:
             return
 
-        sound = random.choice(self.footstep_sounds)
-        sound.volume = 0.40 + self.run_blend * 0.12
-        sound.play()
+        path = random.choice(self.footstep_sounds)
+        play_transient_sound(path, volume=0.40 + self.run_blend * 0.12, ttl=1.0)
 
         if self.footstep_callback:
             self.footstep_callback()

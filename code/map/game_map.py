@@ -55,6 +55,12 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
         self.active_doors = {}
         self.active_drawers = {}
         self.active_keypads = {}
+        self._moving_door_keys = set()
+        self._moving_drawer_keys = set()
+        self._interaction_cache_result = None
+        self._interaction_cache_pose = None
+        self._interaction_cache_time = -999.0
+        self._active_key_glow_key = None
         self.init_door_assets()
 
         self.walkable_cells = {

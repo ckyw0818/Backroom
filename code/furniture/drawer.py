@@ -2,9 +2,10 @@ import random
 
 from direct.showbase import ShowBaseGlobal
 from panda3d.core import CardMaker, Filename, NodePath, PNMImage, Point3, Texture, TransparencyAttrib
-from ursina import Audio, Entity, Vec3, camera, color, time
+from ursina import Entity, Vec3, camera, color, time
 
 from map.map_data import CELL, PROJECT_DIR
+from utill.audio import play_transient_sound
 
 
 DRAWER_MODEL_PATH = PROJECT_DIR / 'asset' / 'model' / 'drawer.glb'
@@ -18,6 +19,7 @@ DRAWER_WALL_CLEARANCE = 0.04
 DRAWER_OPEN_DISTANCE = 30
 DRAWER_OPEN_SPEED = 10.0
 DRAWER_INTERACT_RAY_DISTANCE = CELL * 0.4
+DRAWER_INTERACT_CULL_DISTANCE = CELL * 1.1
 DRAWER_INTERACT_PAD = 0.025
 DRAWER_AIM_TIE_DISTANCE = 0.18
 DRAWER_LIGHT_RGB = (255, 228, 172)
@@ -80,6 +82,26 @@ NOTE_ROTATION_JITTER = 60.0
 
 
 class DrawerMixin:
+    def mark_drawer_moving(self, key):
+        if hasattr(self, '_moving_drawer_keys'):
+            self._moving_drawer_keys.add(key)
+
+    def nearby_active_drawers(self, max_distance=DRAWER_INTERACT_CULL_DISTANCE):
+        max_dist_sq = max_distance * max_distance
+
+        for key, drawer in self.active_drawers.items():
+            entity = drawer['entity']
+
+            if not entity.enabled:
+                continue
+
+            x, _, z = drawer['position']
+            dx = x - self.player.x
+            dz = z - self.player.z
+
+            if dx * dx + dz * dz <= max_dist_sq:
+                yield key, drawer
+
     def init_drawer_assets(self):
         self.drawer_model = self.load_drawer_model()
         self.drawer_model_scale = self.fit_drawer_model_scale(self.drawer_model)
@@ -94,34 +116,6 @@ class DrawerMixin:
         self.collected_notes = set()
         self.held_note_entities = {}
         self.held_note_placeholders = []
-        self.key_get_sound = Audio('asset/sound/key_get.wav', autoplay=False, volume=KEY_GET_VOLUME)
-        self.paper_get_sound = Audio('asset/sound/paper.wav', autoplay=False, volume=PAPER_GET_VOLUME)
-
-    def set_sound_volume(self, sound, volume):
-        try:
-            sound.volume = volume
-        except Exception:
-            pass
-
-        for attr in ('sound', '_sound', 'audio', '_audio'):
-            inner = getattr(sound, attr, None)
-
-            if inner and hasattr(inner, 'setVolume'):
-                try:
-                    inner.setVolume(volume)
-                except Exception:
-                    pass
-
-    def play_sound(self, sound, volume=None, start=None):
-        if volume is not None:
-            self.set_sound_volume(sound, volume)
-
-        sound.stop()
-
-        if start is None:
-            sound.play()
-        else:
-            sound.play(start=start)
 
     def load_drawer_model(self):
         scene = ShowBaseGlobal.base.loader.loadModel(Filename.fromOsSpecific(str(DRAWER_MODEL_PATH)))
@@ -462,8 +456,6 @@ class DrawerMixin:
                 'target': open_amount,
                 'face': face,
                 'position': position,
-                'open_sound': Audio('asset/sound/drawer_open.wav', autoplay=False, volume=1.0),
-                'close_sound': Audio('asset/sound/drawer_close.wav', autoplay=False, volume=1.0),
             }
 
     def add_start_room_wall_note(self, entities, cx, cz, face, west_x, north_z, east_x, south_z, near_lights):
@@ -724,12 +716,7 @@ class DrawerMixin:
         nearest_key = None
         nearest_t = DRAWER_INTERACT_RAY_DISTANCE
 
-        for key, drawer in self.active_drawers.items():
-            entity = drawer['entity']
-
-            if not entity.enabled:
-                continue
-
+        for key, drawer in self.nearby_active_drawers():
             t = self.key_hit_distance(drawer, origin, ray)
 
             if t is not None and t < nearest_t:
@@ -742,12 +729,7 @@ class DrawerMixin:
         nearest_key = None
         nearest_t = DRAWER_INTERACT_RAY_DISTANCE
 
-        for key, drawer in self.active_drawers.items():
-            entity = drawer['entity']
-
-            if not entity.enabled:
-                continue
-
+        for key, drawer in self.nearby_active_drawers():
             t = self.note_hit_distance(drawer, origin, ray)
 
             if t is not None and t < nearest_t:
@@ -757,17 +739,28 @@ class DrawerMixin:
         return nearest_key, nearest_t if nearest_key is not None else None
 
     def update_key_glow(self, active_key):
-        for key, drawer in self.active_drawers.items():
-            key_data = drawer.get('key')
+        if self.has_key:
+            active_key = None
+        elif active_key is not None:
+            drawer = self.active_drawers.get(active_key)
+            if not drawer or drawer.get('open', 0.0) < KEY_PICKUP_MIN_OPEN:
+                active_key = None
 
-            if not key_data:
-                continue
+        if active_key == getattr(self, '_active_key_glow_key', None):
+            return
 
-            glow = key_data['glow']
-            if not self.has_key and key == active_key and drawer.get('open', 0.0) >= KEY_PICKUP_MIN_OPEN:
-                glow.show()
-            else:
-                glow.hide()
+        previous_key = getattr(self, '_active_key_glow_key', None)
+        previous = self.active_drawers.get(previous_key) if previous_key is not None else None
+        previous_key_data = previous.get('key') if previous else None
+        if previous_key_data:
+            previous_key_data['glow'].hide()
+
+        current = self.active_drawers.get(active_key) if active_key is not None else None
+        current_key_data = current.get('key') if current else None
+        if current_key_data:
+            current_key_data['glow'].show()
+
+        self._active_key_glow_key = active_key
 
     def pickup_key(self, key):
         drawer = self.active_drawers.get(key)
@@ -779,7 +772,9 @@ class DrawerMixin:
         self.has_key = True
         key_data['node'].hide()
         key_data['glow'].hide()
-        self.play_sound(self.key_get_sound, KEY_GET_VOLUME)
+        self._active_key_glow_key = None
+        self.invalidate_interaction_cache()
+        play_transient_sound('asset/sound/key_get.wav', volume=KEY_GET_VOLUME, ttl=2.5)
         self.show_held_key()
         return True
 
@@ -792,7 +787,8 @@ class DrawerMixin:
 
         self.collected_notes.add(key)
         note_data['node'].hide()
-        self.play_sound(self.paper_get_sound, PAPER_GET_VOLUME)
+        self.invalidate_interaction_cache()
+        play_transient_sound('asset/sound/paper.wav', volume=PAPER_GET_VOLUME, ttl=2.5)
         self.show_held_note(key, note_data)
         return True
 
@@ -822,7 +818,7 @@ class DrawerMixin:
                 self.show_held_note(drawer_key, {'texture': texture})
 
         if collected_any:
-            self.play_sound(self.paper_get_sound, PAPER_GET_VOLUME)
+            play_transient_sound('asset/sound/paper.wav', volume=PAPER_GET_VOLUME, ttl=2.5)
 
     def consume_key(self):
         if not self.has_key:
@@ -833,6 +829,7 @@ class DrawerMixin:
         if self.held_key_entity:
             self.held_key_entity.enabled = False
 
+        self.invalidate_interaction_cache()
         return True
 
     def reset_key_pickup(self):
@@ -864,6 +861,9 @@ class DrawerMixin:
 
             key_data['node'].show()
             key_data['glow'].hide()
+
+        self._active_key_glow_key = None
+        self.invalidate_interaction_cache()
 
     def show_held_key(self):
         if self.held_key_entity:
@@ -927,12 +927,7 @@ class DrawerMixin:
         nearest_aim_offset = float('inf')
         checked_bodies = set()
 
-        for key, drawer in self.active_drawers.items():
-            entity = drawer['entity']
-
-            if not entity.enabled:
-                continue
-
+        for key, drawer in self.nearby_active_drawers():
             t = self.drawer_hit_distance(drawer, origin, ray)
 
             if t is not None:
@@ -949,6 +944,7 @@ class DrawerMixin:
                     nearest_aim_offset = aim_offset
 
             body_node = drawer.get('body_node')
+            entity = drawer['entity']
 
             if body_node is None or id(entity) in checked_bodies:
                 continue
@@ -996,13 +992,20 @@ class DrawerMixin:
         is_open = self.drawer_states.get(key, False)
         self.drawer_states[key] = not is_open
         drawer['target'] = 1.0 if not is_open else 0.0
+        self.mark_drawer_moving(key)
+        self.invalidate_interaction_cache()
 
-        self.play_sound(drawer['close_sound'] if is_open else drawer['open_sound'])
+        path = 'asset/sound/drawer_close.wav' if is_open else 'asset/sound/drawer_open.wav'
+        play_transient_sound(path, volume=1.0, ttl=3.0)
         return True
 
     def update_drawers(self):
-        for key, drawer in list(self.active_drawers.items()):
-            if not drawer['entity'].enabled:
+        moving_drawer_keys = getattr(self, '_moving_drawer_keys', set())
+
+        for key in list(moving_drawer_keys):
+            drawer = self.active_drawers.get(key)
+            if not drawer or not drawer['entity'].enabled:
+                moving_drawer_keys.discard(key)
                 continue
 
             target = 1.0 if self.drawer_states.get(key, False) else 0.0
@@ -1012,3 +1015,8 @@ class DrawerMixin:
 
             base_pos = drawer['base_pos']
             drawer['node'].setPos(base_pos.x, base_pos.y, base_pos.z - drawer['open_offset'] * current)
+
+            if abs(current - target) <= 0.001:
+                drawer['open'] = target
+                drawer['node'].setPos(base_pos.x, base_pos.y, base_pos.z - drawer['open_offset'] * target)
+                moving_drawer_keys.discard(key)

@@ -12,7 +12,7 @@ from pathlib import Path
 from direct.showbase import ShowBaseGlobal
 from panda3d.core import AmbientLight as Panda3dAmbientLight, Point2
 
-from character.monster import MonsterAI
+from character.monster import MonsterAI, NOISE_ATTRACT_RADIUS_CELLS
 from character.player_controller import CAMERA_FOV, RUN_SPEED, HeadBob, create_player
 from furniture.door import DOOR_DENSITY, DOOR_FACE_SALTS
 from game_clear import GameClearSequence
@@ -20,7 +20,7 @@ from main_menu import MainMenu, PauseMenu
 from map.game_map import MapRenderer
 from map.light import LightSystem
 from map.map_data import CELL, LAYOUT, START_ROOM_CELL, WALL_H
-from map.minimap import MINIMAP_ENABLED, Minimap
+from map.minimap import MINIMAP_ENABLED, NOISE_RING_RADIUS_CELLS, SCAN_RADIUS_CELLS, Minimap
 from utill.post_effects import PostEffects
 from utill.textures import DARK_COLOR, load_environment_textures
 
@@ -37,8 +37,8 @@ HEARTBEAT_SMOOTHING = 4.5
 CROSSHAIR_SIZE = 0.010
 CROSSHAIR_DOOR_SIZE = 0.017
 CROSSHAIR_SMOOTHING = 14.0
-NOISE_SONAR_STRENGTH = 1.0
-NOISE_DOOR_STRENGTH = 0.7
+NOISE_SONAR_STRENGTH = SCAN_RADIUS_CELLS / NOISE_ATTRACT_RADIUS_CELLS
+NOISE_DOOR_STRENGTH = NOISE_RING_RADIUS_CELLS / NOISE_ATTRACT_RADIUS_CELLS
 NOISE_DRAWER_STRENGTH = 0.45
 EXIT_BACKGROUND = color.Color(1.0, 1.0, 1.0, 1.0)
 NOISE_FOOTSTEP_STRENGTH = 0.3
@@ -65,7 +65,7 @@ MONSTER_SPAWN_COUNT = 4
 MONSTER_SPAWN_MIN_DISTANCE = 20
 MONSTER_SPAWN_MIN_SEPARATION = 8
 MONSTER_FINAL_NOTE_SPEED_MULTIPLIER = 1.25
-ZOOM_KEY = 'z'
+ZOOM_KEYS = ('control', 'left control', 'right control')
 ZOOM_TIME = 0.5
 ZOOM_FOV = CAMERA_FOV * 0.5
 
@@ -118,7 +118,7 @@ def set_audio_rate(sound, rate):
 def update_camera_zoom(active=True):
     global zoom_amount
 
-    target = 1.0 if active and held_keys[ZOOM_KEY] else 0.0
+    target = 1.0 if active and any(held_keys[key] for key in ZOOM_KEYS) else 0.0
     zoom_amount = move_towards(zoom_amount, target, time.dt / ZOOM_TIME)
     amount = smoothstep01(zoom_amount)
     camera.fov = CAMERA_FOV + (ZOOM_FOV - CAMERA_FOV) * amount
@@ -196,6 +196,20 @@ def emit_noise(strength):
     cell = player_noise_cell()
     for monster in active_monsters():
         monster.investigate_noise(cell, strength)
+
+
+def emit_noise_to_monsters(target_monsters, strength):
+    cell = player_noise_cell()
+    for monster in target_monsters:
+        if monster_active(monster):
+            monster.investigate_noise(cell, strength)
+
+
+def emit_noise_in_radius(radius_cells, strength):
+    cell = player_noise_cell()
+    for monster in active_monsters():
+        if monster.grid_distance(monster.monster_cell(), cell) <= radius_cells:
+            monster.investigate_noise(cell, strength)
 
 
 def player_noise_cell():
@@ -850,10 +864,7 @@ def initialize_game():
     light_system = LightSystem(LAYOUT, CELL, WALL_H)
     START_ROOM_CELL_RUNTIME = random_start_room_cell()
     player = create_player(CELL, *START_ROOM_CELL_RUNTIME, spawn_yaw=-90)
-    footstep_sounds = [
-        Audio(f'asset/sound/foot{i}.wav', autoplay=False, volume=0.60)
-        for i in range(1, 4)
-    ]
+    footstep_sounds = [f'asset/sound/foot{i}.wav' for i in range(1, 4)]
     head_bob = HeadBob(player, footstep_sounds, lambda: emit_noise(NOISE_FOOTSTEP_STRENGTH))
     map_renderer = MapRenderer(player, light_system, textures, START_ROOM_CELL_RUNTIME)
     reset_player_to_start()
@@ -1053,6 +1064,24 @@ suspend_gameplay_for_menu()
 start_menu_music()
 
 
+_prof_t = 0.0
+
+def dbg():
+    mr = map_renderer
+    print(
+        'ent', len(scene.entities),
+        'vc', len(mr._visible_cells),
+        'vr', len(mr._visible_rooms),
+        'vl', len(mr._visible_lights),
+        'vs', len(mr._visible_static_chunks),
+        'cc', len(mr._collision_cells),
+        'cr', len(mr._collision_rooms),
+        'hq', len(mr._hide_cell_queue), len(mr._hide_room_queue), len(mr._hide_light_queue),
+        'cache', len(mr._visibility_cache),
+        'doors', len(mr.active_doors),
+        'drawers', len(mr.active_drawers),
+    )
+
 def update():
     global heartbeat_rate, minimap_scan_was_down, minimap_tab_was_down, minimap_visible
 
@@ -1103,8 +1132,9 @@ def update():
 
     minimap_scan_down = held_keys['r']
     if minimap_scan_down and not minimap_scan_was_down:
-        emit_noise(NOISE_SONAR_STRENGTH)
-        if minimap.scan():
+        detected_monsters = minimap.scan()
+        if detected_monsters is not None:
+            emit_noise_to_monsters(detected_monsters, NOISE_SONAR_STRENGTH)
             sonar_sound.play()
     minimap_scan_was_down = minimap_scan_down
 
@@ -1143,6 +1173,11 @@ def update():
     update_jumpscare_look()
     update_game_start_fadein()
     update_camera_zoom()
+    global _prof_t
+    _prof_t += time.dt
+    if _prof_t >= 1:
+        _prof_t = 0
+        dbg()
 
 
 def teleport_to_exit_door_debug():
@@ -1193,7 +1228,7 @@ def input(key):
         interaction = map_renderer.nearest_interaction()
         if map_renderer.interact_nearest() and interaction:
             if interaction[0] == 'door':
-                emit_noise(NOISE_DOOR_STRENGTH)
+                emit_noise_in_radius(NOISE_RING_RADIUS_CELLS, NOISE_DOOR_STRENGTH)
             elif interaction[0] == 'drawer':
                 emit_noise(NOISE_DRAWER_STRENGTH)
 

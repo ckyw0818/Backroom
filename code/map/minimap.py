@@ -14,6 +14,7 @@ MINIMAP_WORLD_RANGE = 70
 MINIMAP_INNER = 0.88
 
 SCAN_RADIUS_CELLS = 14
+NOISE_RING_RADIUS_CELLS = SCAN_RADIUS_CELLS * 0.5
 SCAN_PULSE_TIME = 0.8
 SCAN_COOLDOWN_TIME = 5.0
 MONSTER_PULSE_TIME = 0.65
@@ -29,6 +30,8 @@ STATIC_NOISE_FPS = 10.0
 GLITCH_START_CELLS = SCAN_RADIUS_CELLS + 0.8
 GLITCH_MAX_CELLS = 1.15
 GLITCH_SMOOTHING = 4.5
+COOLDOWN_RING_SEGMENTS = 64
+MAP_REBUILD_INTERVAL = 0.08
 
 FLOOR_ALPHA = 155
 ROOM_ALPHA = 130
@@ -137,10 +140,14 @@ class Minimap:
         self.door_indicators = []
         self.floor_cells = []
         self.room_cells = []
+        self.floor_cell_set = set()
+        self.room_cell_set = set()
         self.door_indicator_specs = []
+        self.door_indicator_specs_by_floor = {}
         self.revealed_cells = set()
         self.map_anchor = (0.0, 0.0)
         self.map_dirty = True
+        self.map_rebuild_timer = 0.0
         self.last_map_player_cell = None
 
         self.scanning = False
@@ -185,9 +192,10 @@ class Minimap:
             scale=MINIMAP_SIZE * 1.02,
         )
 
+        self.cooldown_rim_mesh = Mesh(vertices=[], triangles=[], colors=[], mode='triangle', static=False)
         self.cooldown_rim = Entity(
             parent=self.root,
-            model=Mesh(vertices=[], triangles=[], colors=[], mode='triangle', static=False),
+            model=self.cooldown_rim_mesh,
             position=(0, 0, 0.152),
             enabled=False,
         )
@@ -207,6 +215,17 @@ class Minimap:
             position=(0, 0, -0.03),
             scale=0.001,
             enabled=False,
+        )
+        self.noise_range_ring = Entity(
+            parent=self.root,
+            model=self.ring_mesh(
+                NOISE_RING_RADIUS_CELLS * self.cell / MINIMAP_WORLD_RANGE * self.ui_radius(),
+                MINIMAP_SIZE * 0.006,
+                72,
+                rgba(220, 198, 85, 105),
+            ),
+            color=rgba(255, 255, 255, 255),
+            position=(0, 0, -0.02),
         )
 
         self.monster_pulses = []
@@ -324,6 +343,27 @@ class Minimap:
 
         return x, y
 
+    def ring_mesh(self, radius, thickness, segments, ring_color):
+        outer = radius + thickness * 0.5
+        inner = max(0.001, radius - thickness * 0.5)
+        vertices = []
+        triangles = []
+        colors = []
+
+        for i in range(segments):
+            t = pi * 2.0 * (i / segments)
+            vertices.append((cos(t) * outer, sin(t) * outer, 0.0))
+            vertices.append((cos(t) * inner, sin(t) * inner, 0.0))
+            colors.extend((ring_color, ring_color))
+
+        for i in range(segments):
+            j = i * 2
+            n = ((i + 1) % segments) * 2
+            triangles.append((j, n, j + 1))
+            triangles.append((j + 1, n, n + 1))
+
+        return Mesh(vertices=vertices, triangles=triangles, colors=colors, mode='triangle', static=True)
+
     def chase_monster_distance_cells(self):
         best = None
 
@@ -393,8 +433,10 @@ class Minimap:
             for x, v in enumerate(row):
                 if v == 0:
                     self.floor_cells.append((y, x))
+                    self.floor_cell_set.add((y, x))
                 elif (y, x) in self._door_room_set:
                     self.room_cells.append((y, x))
+                    self.room_cell_set.add((y, x))
 
         for (fr, fc), rooms in self.cell_door_rooms.items():
             for (rr, rc) in rooms:
@@ -407,7 +449,9 @@ class Minimap:
                 else:
                     ind_scale = (s * 0.22, s * 0.68)
                 highlighted = (rr, rc) in self.highlighted_room_cells
-                self.door_indicator_specs.append((fr, fc, ind_wx, ind_wz, ind_scale, highlighted))
+                spec = (fr, fc, ind_wx, ind_wz, ind_scale, highlighted)
+                self.door_indicator_specs.append(spec)
+                self.door_indicator_specs_by_floor.setdefault((fr, fc), []).append(spec)
 
     def set_enabled(self, enabled):
         self.enabled = enabled
@@ -448,7 +492,7 @@ class Minimap:
 
     def scan(self):
         if self.scan_cooldown > 0.0:
-            return False
+            return None
 
         pr, pc = self.player_cell()
 
@@ -467,6 +511,7 @@ class Minimap:
         scan_x = pc * self.cell
         scan_z = pr * self.cell
         observed_monster_count = 0
+        detected_monsters = []
         for i, monster in enumerate(self.monsters):
             if not getattr(monster.entity, 'enabled', True):
                 continue
@@ -476,6 +521,7 @@ class Minimap:
             monster_dist_cells = sqrt(monster_dx * monster_dx + monster_dz * monster_dz) / self.cell
 
             if monster_dist_cells <= SCAN_RADIUS_CELLS:
+                detected_monsters.append(monster)
                 warn_index = observed_monster_count
                 observed_monster_count += 1
                 self.has_monster_fixes[i] = True
@@ -484,7 +530,7 @@ class Minimap:
                 self.pending_monster_warn_indices[i] = warn_index
                 self.update_monster_dot(i)
 
-        return True
+        return detected_monsters
 
     def update_scan_cooldown(self):
         if self.scan_cooldown > 0.0:
@@ -498,10 +544,10 @@ class Minimap:
 
         self.cooldown_rim.enabled = True
         self.rim.color = rgba(188, 166, 65, 95)
-        self.cooldown_rim.model = self.cooldown_ring_mesh(progress)
+        self.update_cooldown_ring_mesh(progress)
 
-    def cooldown_ring_mesh(self, progress):
-        segments = max(4, int(64 * progress))
+    def update_cooldown_ring_mesh(self, progress):
+        segments = COOLDOWN_RING_SEGMENTS
         outer = MINIMAP_SIZE * 0.535
         inner = MINIMAP_SIZE * 0.500
         start = pi * 0.5
@@ -526,7 +572,10 @@ class Minimap:
                 triangles.append((j, j + 1, j + 2))
                 triangles.append((j + 1, j + 3, j + 2))
 
-        return Mesh(vertices=vertices, triangles=triangles, colors=colors, mode='triangle', static=False)
+        self.cooldown_rim_mesh.vertices = vertices
+        self.cooldown_rim_mesh.triangles = triangles
+        self.cooldown_rim_mesh.colors = colors
+        self.cooldown_rim_mesh.generate()
 
     def update_scan_wave(self):
         self.update_scan_cooldown()
@@ -573,12 +622,13 @@ class Minimap:
             self.scan_pulse.enabled = False
 
     def update_tiles(self):
-        player_cell = self.player_cell()
+        if self.map_rebuild_timer > 0.0:
+            self.map_rebuild_timer = max(0.0, self.map_rebuild_timer - time.dt)
 
-        if self.map_dirty or player_cell != self.last_map_player_cell:
+        if self.map_dirty and (not self.scanning or self.map_rebuild_timer <= 0.0):
             self.rebuild_map_mesh()
             self.map_dirty = False
-            self.last_map_player_cell = player_cell
+            self.map_rebuild_timer = MAP_REBUILD_INTERVAL
 
         anchor_x, anchor_z = self.map_anchor
         x, y = self.world_to_local(anchor_x - self.player.x, anchor_z - self.player.z)
@@ -589,7 +639,7 @@ class Minimap:
         rr = self.ui_radius()
         base = rr * 2.0 * (self.cell / MINIMAP_WORLD_RANGE)
         tile_size = base * FLOOR_SCALE
-        self.map_anchor = (self.player.x, self.player.z)
+        self.map_anchor = (0.0, 0.0)
         anchor_x, anchor_z = self.map_anchor
         vertices = []
         triangles = []
@@ -611,64 +661,38 @@ class Minimap:
         def world_to_anchor(wx, wz):
             return self.world_to_local(wx - anchor_x, wz - anchor_z)
 
-        for r, c in self.floor_cells:
-            if (r, c) not in self.revealed_cells:
+        for r, c in self.revealed_cells:
+            if (r, c) not in self.floor_cell_set:
                 continue
 
             wx = c * self.cell
             wz = r * self.cell
             x, y = world_to_anchor(wx, wz)
-            d = sqrt(x * x + y * y)
+            add_rect(x, y, tile_size, tile_size, self.tile_color())
 
-            if d > rr + tile_size:
-                continue
-
-            edge_amount = min(1.0, max(0.0, (rr - d) / max(0.001, rr * EDGE_FADE)))
-            if edge_amount <= 0:
-                continue
-            add_rect(x, y, tile_size, tile_size, self.shaded_tile_color(edge_amount))
-
-        for r, c in self.room_cells:
-            if (r, c) not in self.revealed_cells:
+        for r, c in self.revealed_cells:
+            if (r, c) not in self.room_cell_set:
                 continue
 
             wx = c * self.cell
             wz = r * self.cell
             x, y = world_to_anchor(wx, wz)
-            d = sqrt(x * x + y * y)
-
-            if d > rr + tile_size:
-                continue
-
-            edge_amount = min(1.0, max(0.0, (rr - d) / max(0.001, rr * EDGE_FADE)))
-            if edge_amount <= 0:
-                continue
             room_color = (
-                self.shaded_highlighted_room_color(edge_amount)
+                self.shaded_highlighted_room_color(1.0)
                 if (r, c) in self.highlighted_room_cells
-                else self.shaded_room_color(edge_amount)
+                else self.shaded_room_color(1.0)
             )
             add_rect(x, y, tile_size * 0.72, tile_size * 0.72, room_color)
 
-        for floor_r, floor_c, ind_wx, ind_wz, ind_scale, highlighted in self.door_indicator_specs:
-            if (floor_r, floor_c) not in self.revealed_cells:
-                continue
+        for cell in self.revealed_cells:
+            for floor_r, floor_c, ind_wx, ind_wz, ind_scale, highlighted in self.door_indicator_specs_by_floor.get(cell, ()):
+                x, y = world_to_anchor(ind_wx, ind_wz)
+                add_rect(x, y, ind_scale[0], ind_scale[1], self.door_indicator_color(highlighted))
 
-            x, y = world_to_anchor(ind_wx, ind_wz)
-            d = sqrt(x * x + y * y)
-
-            if d > rr + max(ind_scale):
-                continue
-
-            add_rect(x, y, ind_scale[0], ind_scale[1], self.door_indicator_color(highlighted))
-
-        self.map_layer.model = Mesh(
-            vertices=vertices,
-            triangles=triangles,
-            colors=colors,
-            mode='triangle',
-            static=False,
-        )
+        self.map_mesh.vertices = vertices
+        self.map_mesh.triangles = triangles
+        self.map_mesh.colors = colors
+        self.map_mesh.generate()
 
     def update_monster_dot(self, i):
         dot = self.monster_dots[i]

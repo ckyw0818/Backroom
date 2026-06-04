@@ -1,11 +1,33 @@
 import math
 import random
 
-from ursina import Button, Entity, Text, application, camera, color, time
+from ursina import Audio, Button, Entity, Text, application, camera, color, time
 
 
 def rgba(r, g, b, a):
     return color.Color(r / 255, g / 255, b / 255, a / 255)
+
+
+_button_click_sound = None
+
+
+def play_button_click_sound():
+    global _button_click_sound
+
+    if _button_click_sound is None:
+        _button_click_sound = Audio('asset/sound/button.wav', autoplay=False, volume=0.45)
+
+    _button_click_sound.stop()
+    _button_click_sound.play(start=0.14)
+
+
+def with_button_click_sound(callback):
+    def wrapped():
+        play_button_click_sound()
+        if callback:
+            callback()
+
+    return wrapped
 
 
 HELP_ROWS = (
@@ -15,7 +37,7 @@ HELP_ROWS = (
     ('E', 'Interact'),
     ('TAB', 'Minimap'),
     ('R', 'Refresh minimap'),
-    ('Z', 'Zoom'),
+    ('CTRL', 'Zoom'),
     ('ESC', 'Pause'),
 )
 HELP_TEXT = '\n'.join(f'{key} - {action}' for key, action in HELP_ROWS)
@@ -39,7 +61,7 @@ class TextMenuButton:
             color=rgba(0, 0, 0, 0),
             highlight_color=rgba(0, 0, 0, 0),
             pressed_color=rgba(0, 0, 0, 0),
-            on_click=callback,
+            on_click=with_button_click_sound(callback),
         )
         self.button.collider = 'box'
         self.button.always_on_top = True

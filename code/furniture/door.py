@@ -1,9 +1,10 @@
 import math
 import random
+import time as pytime
 
 from direct.showbase import ShowBaseGlobal
 from panda3d.core import Filename, NodePath, TransparencyAttrib
-from ursina import Audio, Entity, Text, color, time
+from ursina import Entity, Text, camera, color, time
 
 from furniture.bed import BedMixin
 from furniture.drawer import DrawerMixin
@@ -18,6 +19,7 @@ from map.map_data import (
     WALL_COLLIDER_T,
     WALL_H,
 )
+from utill.audio import play_transient_sound, set_audio_pitch
 from utill.textures import WALL_RGB
 
 
@@ -53,6 +55,7 @@ DOOR_RATTLE_DURATION = 0.42
 DOOR_RATTLE_SWINGS = 2
 DOOR_RATTLE_ANGLE = 1
 DOOR_UNLOCK_OPEN_DELAY = 2.8
+INTERACTION_CACHE_TIME = 0.05
 
 EXIT_SIGN_MODEL_PATH = PROJECT_DIR / 'asset' / 'model' / 'exit_sign.glb'
 EXIT_SIGN_TARGET_W = 0.60
@@ -95,6 +98,23 @@ KEYPAD_BUTTONS = (
     ('0', 0.235, -0.717), ('enter', -0.62, -0.10),
 )
 class DoorMixin(BedMixin, DrawerMixin):
+    def invalidate_interaction_cache(self):
+        self._interaction_cache_pose = None
+        self._interaction_cache_time = -999.0
+
+    def interaction_cache_pose(self):
+        return (
+            round(self.player.x, 2),
+            round(self.player.z, 2),
+            round(getattr(self.player, 'rotation_y', 0.0), 1),
+            round(getattr(camera, 'rotation_x', 0.0), 1),
+            round(getattr(camera, 'rotation_y', 0.0), 1),
+        )
+
+    def mark_door_moving(self, key):
+        if hasattr(self, '_moving_door_keys'):
+            self._moving_door_keys.add(key)
+
     def init_door_assets(self):
         self.door_model = self.load_door_model()
         self.door_model_scale = self.fit_door_model_scale(self.door_model)
@@ -104,9 +124,6 @@ class DoorMixin(BedMixin, DrawerMixin):
         self.keypad_model_scale = self.fit_keypad_model_scale(self.keypad_model)
         self.init_bed_assets()
         self.init_drawer_assets()
-        self.door_open_sound = Audio('asset/sound/door_open.wav', autoplay=False, volume=0.5)
-        self.door_close_sound = Audio('asset/sound/door_close.wav', autoplay=False, volume=0.68)
-        self.key_unlock_sound = Audio('asset/sound/key_unlock.wav', autoplay=False, volume=1.0)
 
     def build_door_lookup(self):
         generated_doors = {
@@ -399,8 +416,7 @@ class DoorMixin(BedMixin, DrawerMixin):
         if collider:
             self.set_door_wall_collision(collider, False)
 
-        self.door_open_sound.stop()
-        self.door_open_sound.play(start=0.3)
+        play_transient_sound('asset/sound/door_open.wav', volume=0.5, start=0.3, ttl=3.0)
         return True
 
     def room_openings(self, room_cell):
@@ -878,6 +894,12 @@ class DoorMixin(BedMixin, DrawerMixin):
             if not keypad['entity'].enabled:
                 continue
 
+            x, _, z = keypad['entity'].position
+            dx = x - self.player.x
+            dz = z - self.player.z
+            if dx * dx + dz * dz > KEYPAD_INTERACT_RAY_DISTANCE * KEYPAD_INTERACT_RAY_DISTANCE * 4.0:
+                continue
+
             for label, button in keypad['buttons'].items():
                 bounds = button.getTightBounds(render)
 
@@ -902,9 +924,12 @@ class DoorMixin(BedMixin, DrawerMixin):
             return False
 
         print(f'keypad button pressed: {label}')
-        beep = Audio('asset/sound/keypad_beep.wav', autoplay=True, volume=0.9)
-        if label == 'enter':
-            self.set_audio_pitch(beep, 1.28)
+        play_transient_sound(
+            'asset/sound/keypad_beep.wav',
+            volume=0.9,
+            pitch=1.28 if label == 'enter' else 1.0,
+            ttl=1.0,
+        )
         button = keypad['buttons'].get(label)
         if button:
             button.press_timer = KEYPAD_PRESS_TIME
@@ -939,31 +964,11 @@ class DoorMixin(BedMixin, DrawerMixin):
         return False
 
     def set_audio_pitch(self, sound, pitch):
-        for attr in ('pitch', 'play_rate', 'rate'):
-            if hasattr(sound, attr):
-                try:
-                    setattr(sound, attr, pitch)
-                    return
-                except Exception:
-                    pass
-
-        for attr in ('sound', '_sound', 'audio', '_audio'):
-            inner = getattr(sound, attr, None)
-
-            if inner and hasattr(inner, 'setPlayRate'):
-                try:
-                    inner.setPlayRate(pitch)
-                    return
-                except Exception:
-                    pass
+        set_audio_pitch(sound, pitch)
 
     def play_keypad_result_sound(self, result):
         path = 'asset/sound/keypad_success.wav' if result == 'success' else 'asset/sound/keypad_fail.wav'
-
-        try:
-            Audio(path, autoplay=True, volume=1.0)
-        except Exception:
-            pass
+        play_transient_sound(path, volume=1.0, ttl=2.5)
 
     def unlock_keypad_door(self, keypad_key):
         door = self.active_doors.get(keypad_key)
@@ -983,9 +988,10 @@ class DoorMixin(BedMixin, DrawerMixin):
         door['unlock_open_timer'] = 0.0
         self.door_states[keypad_key] = True
         door['target'] = 1.0
+        self.mark_door_moving(keypad_key)
+        self.invalidate_interaction_cache()
 
-        self.door_open_sound.stop()
-        self.door_open_sound.play(start=0.3)
+        play_transient_sound('asset/sound/door_open.wav', volume=0.5, start=0.3, ttl=3.0)
 
     def debug_unlock_exit_door(self):
         key = self.exit_sign_door_key
@@ -1053,6 +1059,9 @@ class DoorMixin(BedMixin, DrawerMixin):
             x, _, z = door['position']
             dx = x - self.player.x
             dz = z - self.player.z
+            if dx * dx + dz * dz > DOOR_INTERACT_RAY_DISTANCE * DOOR_INTERACT_RAY_DISTANCE * 4.0:
+                continue
+
             t = dx * ray_x + dz * ray_z
 
             if t < 0 or t > nearest_t:
@@ -1068,7 +1077,15 @@ class DoorMixin(BedMixin, DrawerMixin):
 
         return nearest_key
 
-    def nearest_interaction(self):
+    def nearest_interaction(self, force=False):
+        pose = self.interaction_cache_pose()
+        if (
+            not force
+            and pose == self._interaction_cache_pose
+            and pytime.perf_counter() - self._interaction_cache_time < INTERACTION_CACHE_TIME
+        ):
+            return self._interaction_cache_result
+
         nearest = None
         nearest_t = float('inf')
         ray_x, ray_z = self.player_forward_xz()
@@ -1077,6 +1094,9 @@ class DoorMixin(BedMixin, DrawerMixin):
             x, _, z = door['position']
             dx = x - self.player.x
             dz = z - self.player.z
+            if dx * dx + dz * dz > DOOR_INTERACT_RAY_DISTANCE * DOOR_INTERACT_RAY_DISTANCE * 4.0:
+                continue
+
             t = dx * ray_x + dz * ray_z
 
             if t < 0 or t > DOOR_INTERACT_RAY_DISTANCE:
@@ -1108,6 +1128,9 @@ class DoorMixin(BedMixin, DrawerMixin):
             nearest_t = drawer_t
 
         self.update_key_glow(nearest[1] if nearest and nearest[0] == 'key' else None)
+        self._interaction_cache_result = nearest
+        self._interaction_cache_pose = pose
+        self._interaction_cache_time = pytime.perf_counter()
 
         return nearest
 
@@ -1139,37 +1162,41 @@ class DoorMixin(BedMixin, DrawerMixin):
         if door.get('locked') and not is_open:
             if key == self.exit_sign_door_key:
                 door['rattle_timer'] = DOOR_RATTLE_DURATION
-                Audio('asset/sound/door_rattle.wav', autoplay=True, volume=1.0)
+                self.mark_door_moving(key)
+                self.invalidate_interaction_cache()
+                play_transient_sound('asset/sound/door_rattle.wav', volume=1.0, ttl=2.0)
                 return False
 
             if not self.consume_key():
                 door['rattle_timer'] = DOOR_RATTLE_DURATION
-                Audio('asset/sound/door_rattle.wav', autoplay=True, volume=1.0)
+                self.mark_door_moving(key)
+                self.invalidate_interaction_cache()
+                play_transient_sound('asset/sound/door_rattle.wav', volume=1.0, ttl=2.0)
                 return False
 
             self.door_lock_states[key] = False
             door['locked'] = False
             door['pending_open'] = True
             door['unlock_open_timer'] = DOOR_UNLOCK_OPEN_DELAY
-            self.key_unlock_sound.stop()
-            self.key_unlock_sound.play()
+            self.mark_door_moving(key)
+            self.invalidate_interaction_cache()
+            play_transient_sound('asset/sound/key_unlock.wav', volume=1.0, ttl=3.0)
             return True
 
         self.door_states[key] = not is_open
         door['target'] = 1.0 if not is_open else 0.0
-
-        sound = self.door_close_sound if is_open else self.door_open_sound
-        sound.stop()
+        self.mark_door_moving(key)
+        self.invalidate_interaction_cache()
 
         if not is_open:
-            sound.play(start=0.3)
+            play_transient_sound('asset/sound/door_open.wav', volume=0.5, start=0.3, ttl=3.0)
         else:
-            sound.play()
+            play_transient_sound('asset/sound/door_close.wav', volume=0.68, ttl=3.0)
 
         return True
 
     def interact_nearest(self):
-        interaction = self.nearest_interaction()
+        interaction = self.nearest_interaction(force=True)
 
         if interaction is None:
             return False
@@ -1194,7 +1221,14 @@ class DoorMixin(BedMixin, DrawerMixin):
     def update_doors(self):
         self.update_keypads()
 
-        for key, door in list(self.active_doors.items()):
+        moving_door_keys = getattr(self, '_moving_door_keys', set())
+
+        for key in list(moving_door_keys):
+            door = self.active_doors.get(key)
+            if not door:
+                moving_door_keys.discard(key)
+                continue
+
             if door.get('pending_open'):
                 door['unlock_open_timer'] = max(0.0, door.get('unlock_open_timer', 0.0) - time.dt)
 
@@ -1202,8 +1236,7 @@ class DoorMixin(BedMixin, DrawerMixin):
                     door['pending_open'] = False
                     self.door_states[key] = True
                     door['target'] = 1.0
-                    self.door_open_sound.stop()
-                    self.door_open_sound.play(start=0.3)
+                    play_transient_sound('asset/sound/door_open.wav', volume=0.5, start=0.3, ttl=3.0)
 
             target = 1.0 if self.door_states.get(key, False) else 0.0
             current = door['open'] + (target - door['open']) * min(1.0, time.dt * DOOR_OPEN_SPEED)
@@ -1223,3 +1256,12 @@ class DoorMixin(BedMixin, DrawerMixin):
             collider = door.get('wall_collider')
             if collider:
                 self.set_door_wall_collision(collider, current <= 0.5)
+
+            moving = (
+                abs(current - target) > 0.001
+                or door.get('pending_open')
+                or door.get('rattle_timer', 0.0) > 0.0
+            )
+            if not moving:
+                door['open'] = target
+                moving_door_keys.discard(key)
