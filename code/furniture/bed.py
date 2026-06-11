@@ -145,6 +145,7 @@ class BedMixin:
             rotation=(0, rotation_y, 0),
             scale=self.bed_model_scale,
         )
+        entity.ignore = True
 
         model = self.bed_model.copyTo(entity)
         self.prepare_bed_model(model)
@@ -160,6 +161,7 @@ class BedMixin:
             texture=self.furniture_shadow_texture,
             color=color.rgba(0, 0, 0, BED_SHADOW_ALPHA),
         )
+        shadow.ignore = True
         entities.append(shadow)
 
         collider = Entity(
@@ -169,6 +171,7 @@ class BedMixin:
             scale=self.bed_collider_scale(face),
             collider='box',
         )
+        collider.ignore = True
         collider._collision_entity = True
         entities.append(collider)
         return position, rotation_y, face

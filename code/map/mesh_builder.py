@@ -237,6 +237,7 @@ class MeshBuilderMixin:
             ),
             unlit=True,
         )
+        entity.ignore = True
         if data['texture'] is not None:
             entity.model.setTexture(data['texture'], 1)
         return entity

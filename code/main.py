@@ -688,8 +688,9 @@ class DoorCrosshair:
         target = CROSSHAIR_DOOR_SIZE if door_ready else CROSSHAIR_SIZE
         k = min(1.0, time.dt * CROSSHAIR_SMOOTHING)
         scale = self.outer.scale_x + (target - self.outer.scale_x) * k
-        self.outer.scale = scale
-        self.inner.scale = scale * 0.52
+        if abs(scale - self.outer.scale_x) > 1e-6:
+            self.outer.scale = scale
+            self.inner.scale = scale * 0.52
         if self._door_ready != door_ready:
             self._door_ready = door_ready
             self.outer.color = rgba(255, 236, 165, 175 if door_ready else 115)
@@ -819,18 +820,30 @@ class DeathScreen:
                 full_alpha = 0
                 lost_alpha = 255
 
-            heart['full'].color = rgba(*self.HEART_TINT, full_alpha)
-            heart['lost'].color = rgba(*self.HEART_TINT, lost_alpha)
+            if heart.get('_full_alpha') != full_alpha:
+                heart['full'].color = rgba(*self.HEART_TINT, full_alpha)
+                heart['_full_alpha'] = full_alpha
+            if heart.get('_lost_alpha') != lost_alpha:
+                heart['lost'].color = rgba(*self.HEART_TINT, lost_alpha)
+                heart['_lost_alpha'] = lost_alpha
 
         self.game_over.enabled = show_game_over
         if show_game_over:
             fade = min(1.0, max(0.0, game_over_progress))
-            self.game_over.color = rgba(230, 230, 230, int(255 * fade))
+            game_over_alpha = int(255 * fade)
+            if getattr(self, '_game_over_alpha', -1) != game_over_alpha:
+                self.game_over.color = rgba(230, 230, 230, game_over_alpha)
+                self._game_over_alpha = game_over_alpha
             for button, label in self.game_over_buttons:
                 button.enabled = fade >= 0.85
                 label.enabled = True
                 alpha = int(255 * fade)
-                label.color = rgba(246, 214, 122, alpha) if button.hovered else rgba(235, 231, 205, alpha)
+                hovered = button.hovered
+                prev = getattr(label, '_color_state', None)
+                new_state = (hovered, alpha)
+                if prev != new_state:
+                    label.color = rgba(246, 214, 122, alpha) if hovered else rgba(235, 231, 205, alpha)
+                    label._color_state = new_state
         else:
             for button, label in self.game_over_buttons:
                 button.enabled = False
@@ -843,6 +856,8 @@ want-pstats true
 pstats-tasks true
 pstats-gpu-timing true
 ''')
+
+loadPrcFileData('', 'garbage-collect-states-rate 6')
 
 app = Ursina(title='The Backrooms', size=(1280, 720))
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -1363,6 +1378,7 @@ _prof_t = 0.0
 _prof_frames = 0
 _sect = {}
 _pstat_collectors = {}
+_pressure_frame = 0
 
 
 def _pstat_collector(name):
@@ -1464,7 +1480,11 @@ def update():
         _tm('clear', game_clear_sequence.update)
         return
 
-    _tm('pressure', update_monster_pressure)
+    global _pressure_frame
+    _pressure_frame += 1
+    if _pressure_frame >= 6:
+        _pressure_frame = 0
+        _tm('pressure', update_monster_pressure)
 
     active = active_monsters()
     monster_start = _t.perf_counter()

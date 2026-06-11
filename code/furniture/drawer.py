@@ -462,6 +462,7 @@ class DrawerMixin:
             rotation=(0, rotation_y, 0),
             scale=self.drawer_model_scale,
         )
+        entity.ignore = True
 
         model = self.drawer_model.copyTo(entity)
         self.prepare_drawer_model(model)
@@ -480,6 +481,7 @@ class DrawerMixin:
             texture=self.furniture_shadow_texture,
             color=color.rgba(0, 0, 0, DRAWER_SHADOW_ALPHA),
         )
+        shadow.ignore = True
         entities.append(shadow)
 
         collider = Entity(
@@ -489,6 +491,7 @@ class DrawerMixin:
             scale=self.drawer_collider_scale(face),
             collider='box',
         )
+        collider.ignore = True
         collider._collision_entity = True
         entities.append(collider)
 
@@ -551,6 +554,7 @@ class DrawerMixin:
                 scale=(START_ROOM_WALL_NOTE_SIZE[0], START_ROOM_WALL_NOTE_SIZE[1]),
                 color=tint,
             )
+            note.ignore = True
             note.setTwoSided(True)
             note.setTransparency(TransparencyAttrib.MAlpha)
             entities.append(note)

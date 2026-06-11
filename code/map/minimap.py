@@ -43,6 +43,13 @@ def rgba(r, g, b, a):
     return color.Color(r / 255, g / 255, b / 255, a / 255)
 
 
+_COLOR_MONSTER_DOT = rgba(255, 35, 35, 255)
+_COLOR_MONSTER_PULSE_ZERO = rgba(255, 35, 35, 0)
+_COLOR_RIM = rgba(188, 166, 65, 95)
+_COLOR_SCAN_PULSE_FULL = rgba(178, 175, 118, 95)
+_COLOR_STATIC_WHITE = rgba(255, 255, 255, 255)
+
+
 MINIMAP_VIGNETTE_SHADER = Shader(
     name='minimap_vignette_shader',
     language=Shader.GLSL,
@@ -163,6 +170,9 @@ class Minimap:
         self.has_monster_fixes = [False for _ in self.monsters]
         self.monster_fix_positions = [(0.0, 0.0) for _ in self.monsters]
         self.monster_pulse_ts = [MONSTER_PULSE_TIME for _ in self.monsters]
+        self._dot_alphas = [-1 for _ in self.monsters]
+        self._pulse_last_alpha = [-1 for _ in self.monsters]
+        self._rim_color_active = False
         self.glitch_amount = 0.0
         self.warn_sounds = [
             Audio('asset/sound/warn.wav', autoplay=False, volume=0.78)
@@ -511,7 +521,7 @@ class Minimap:
 
         self.scan_pulse.enabled = True
         self.scan_pulse.scale = 0.001
-        self.scan_pulse.color = rgba(178, 175, 118, 95)
+        self.scan_pulse.color = _COLOR_SCAN_PULSE_FULL
 
         scan_x = pc * self.cell
         scan_z = pr * self.cell
@@ -544,12 +554,16 @@ class Minimap:
         progress = self.scan_cooldown / max(0.001, SCAN_COOLDOWN_TIME)
         if progress <= 0.0 or not self.enabled:
             self.cooldown_rim.enabled = False
-            self.rim.color = rgba(188, 166, 65, 95)
+            if getattr(self, '_rim_color_active', True):
+                self.rim.color = _COLOR_RIM
+                self._rim_color_active = False
             self._last_cooldown_progress = -1.0
             return
 
         self.cooldown_rim.enabled = True
-        self.rim.color = rgba(188, 166, 65, 95)
+        if not getattr(self, '_rim_color_active', False):
+            self.rim.color = _COLOR_RIM
+            self._rim_color_active = True
         if abs(progress - self._last_cooldown_progress) >= 0.004:
             self.update_cooldown_ring_mesh(progress)
             self._last_cooldown_progress = progress
@@ -627,7 +641,10 @@ class Minimap:
 
         k = min(1.0, self.scan_wave / max(0.001, self.scan_max))
         self.scan_pulse.scale = self.map_diameter() * k
-        self.scan_pulse.color = rgba(178, 175, 118, int(95 * (1.0 - k)))
+        scan_alpha = int(95 * (1.0 - k))
+        if getattr(self.scan_pulse, '_last_color_alpha', -1) != scan_alpha:
+            self.scan_pulse.color = rgba(178, 175, 118, scan_alpha)
+            self.scan_pulse._last_color_alpha = scan_alpha
 
         if self.scan_wave >= self.scan_max:
             self.scanning = False
@@ -736,9 +753,17 @@ class Minimap:
             x += gx
             y += gy
             flicker = 0.35 + 0.65 * abs(sin(time.time() * (18.0 + self.glitch_amount * 28.0) + i))
-            dot.color = rgba(255, 35, 35, int(255 * (1.0 - self.glitch_amount * 0.45) * flicker))
+            new_alpha = int(255 * (1.0 - self.glitch_amount * 0.45) * flicker)
+            prev = self._dot_alphas[i] if hasattr(self, '_dot_alphas') else -1
+            if new_alpha != prev:
+                dot.color = rgba(255, 35, 35, new_alpha)
+                if hasattr(self, '_dot_alphas'):
+                    self._dot_alphas[i] = new_alpha
         else:
-            dot.color = rgba(255, 35, 35, 255)
+            if not hasattr(self, '_dot_alphas') or self._dot_alphas[i] != 255:
+                dot.color = _COLOR_MONSTER_DOT
+                if hasattr(self, '_dot_alphas'):
+                    self._dot_alphas[i] = 255
 
         dot.position = (x, y, -0.06)
         pulse.position = (x, y, -0.07)
@@ -749,13 +774,15 @@ class Minimap:
         self.pending_monster_pulse_dists = [None for _ in self.monsters]
         self.pending_monster_warn_indices = [None for _ in self.monsters]
         self.monster_pulse_ts = [MONSTER_PULSE_TIME for _ in self.monsters]
+        self._dot_alphas = [-1 for _ in self.monsters]
+        self._pulse_last_alpha = [-1 for _ in self.monsters]
 
         for dot in self.monster_dots:
-            dot.color = rgba(255, 35, 35, 255)
+            dot.color = _COLOR_MONSTER_DOT
             dot.enabled = False
 
         for pulse in self.monster_pulses:
-            pulse.color = rgba(255, 35, 35, 0)
+            pulse.color = _COLOR_MONSTER_PULSE_ZERO
             pulse.enabled = False
 
     def update_player_marker(self):
@@ -783,7 +810,9 @@ class Minimap:
 
         pulse.enabled = True
         pulse.scale = scale
-        pulse.color = rgba(base_rgb[0], base_rgb[1], base_rgb[2], alpha)
+        if getattr(pulse, '_last_color_alpha', -1) != alpha:
+            pulse.color = rgba(base_rgb[0], base_rgb[1], base_rgb[2], alpha)
+            pulse._last_color_alpha = alpha
         return t
 
     def update_monster_pulse(self, i):
@@ -837,7 +866,10 @@ class Minimap:
             self.static_noise.texture = self.static_noise_textures[frame]
             self.static_noise_frame = frame
 
-        self.static_noise.color = rgba(255, 255, 255, int(28 + amount * 82))
+        noise_alpha = int(28 + amount * 82)
+        if getattr(self.static_noise, '_last_color_alpha', -1) != noise_alpha:
+            self.static_noise.color = rgba(255, 255, 255, noise_alpha)
+            self.static_noise._last_color_alpha = noise_alpha
 
     def update_glitch(self):
         target = self.target_glitch_amount()

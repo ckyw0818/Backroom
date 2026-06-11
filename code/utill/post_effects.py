@@ -227,11 +227,11 @@ void main() {
     c += vec3(ln) * line_noise_strength;
     c = clamp(c, 0.0, 1.0);
 
-    vec3 pa = process(pix_uv(p, pix_a));
-    vec3 pb = process(pix_uv(p, pix_b));
-    vec3 pc = process(pix_uv(p, pix_c));
-    vec3 pd = process(pix_uv(p, pix_d));
-    vec3 pe = process(pix_uv(p, pix_e));
+    vec3 pa = sample_tex(tex, pix_uv(p, pix_a));
+    vec3 pb = sample_tex(tex, pix_uv(p, pix_b));
+    vec3 pc = sample_tex(tex, pix_uv(p, pix_c));
+    vec3 pd = sample_tex(tex, pix_uv(p, pix_d));
+    vec3 pe = sample_tex(tex, pix_uv(p, pix_e));
 
     c = mix(c, pa, pix_a_opacity);
     c = mix(c, pb, pix_b_opacity);
@@ -284,7 +284,7 @@ class PostEffects:
         line_noise_speed=24.0,
         effect_strength=1.0,
 
-        jitter_speed=1,
+        jitter_speed=3,
         div=4
     ):
         self.blur = blur
@@ -484,12 +484,15 @@ class PostEffects:
 
     def update(self):
         self.frame += 1
+        prev_threat = self.threat_level
         self.threat_level += (self.threat_target - self.threat_level) * 0.10
 
-        if self.frame % self.jitter_speed == 0:
+        jitter_frame = self.frame % self.jitter_speed == 0
+        if jitter_frame:
             self.randomize_pixelize()
 
-        self.set_inputs()
+        if jitter_frame or abs(self.threat_level - prev_threat) > 0.001:
+            self.set_inputs()
 
     def cleanup(self):
         self.manager.cleanup()

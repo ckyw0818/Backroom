@@ -522,6 +522,7 @@ class DoorMixin(BedMixin, DrawerMixin):
     def add_wall_collider(self, pos, sc):
         entity = Entity(model='cube', visible=False, position=pos, scale=sc, collider='box')
         entity._collision_entity = True
+        entity.ignore = True
         return entity
 
     def add_door_wall_colliders(self, entities, x, z, face):
@@ -609,13 +610,15 @@ class DoorMixin(BedMixin, DrawerMixin):
             if entity:
                 entities.append(entity)
 
-        entities.append(Entity(
+        room_light = Entity(
             model='cube',
             color=color.Color(1.0, 0.98, 0.92, 1.0),
             unlit=True,
             position=(cx, WALL_H - 0.035, cz),
             scale=(0.8, 0.025, 0.8),
-        ))
+        )
+        room_light.ignore = True
+        entities.append(room_light)
 
         _, _, bed_face = self.add_bed_decoration(entities, cx, cz, skip_faces, west_x, north_z, east_x, south_z, lit_near)
         self.add_drawer_decoration(entities, cx, cz, skip_faces, bed_face, west_x, north_z, east_x, south_z, lit_near)
@@ -708,6 +711,7 @@ class DoorMixin(BedMixin, DrawerMixin):
                     scale=(sw, sh, 0.006),
                     unlit=True,
                 )
+                segment.ignore = True
                 digit[name] = segment
 
             digits.append(digit)
@@ -730,6 +734,7 @@ class DoorMixin(BedMixin, DrawerMixin):
             rotation=(0, DOOR_FACE_ROTATIONS[face], 0),
             scale=self.keypad_model_scale,
         )
+        keypad_entity.ignore = True
         keypad_node = self.keypad_model.copyTo(keypad_entity)
         self.prepare_live_keypad_model(keypad_node)
         entities.append(keypad_entity)
@@ -745,6 +750,7 @@ class DoorMixin(BedMixin, DrawerMixin):
                 position=(bx, bz, KEYPAD_BUTTON_Z),
                 scale=self.keypad_button_scale(label),
             )
+            button.ignore = True
             button.always_on_top = True
             button.base_position = (button.x, button.y, button.z)
             button.debug_label = self.add_keypad_debug_label(keypad_entity, label, bx, bz)
@@ -791,6 +797,7 @@ class DoorMixin(BedMixin, DrawerMixin):
             rotation=(0, rotation_y, 0),
             scale=self.door_model_scale,
         )
+        entity.ignore = True
 
         model = self.door_model.copyTo(entity)
         self.prepare_door_model(model)
@@ -812,6 +819,7 @@ class DoorMixin(BedMixin, DrawerMixin):
                 rotation=(0, sign_rot, 0),
                 scale=self.exit_sign_model_scale,
             )
+            sign_entity.ignore = True
             sign_node = self.exit_sign_model.copyTo(sign_entity)
             sign_node.setTwoSided(True)
             sign_node.setColorScale(0.4, 2.5, 0.6, 1.0)
@@ -824,13 +832,15 @@ class DoorMixin(BedMixin, DrawerMixin):
             entities.append(sign_entity)
             self.add_exit_keypad(entities, key, x, z, face)
         else:
-            entities.append(Entity(
+            light_ent = Entity(
                 model='cube',
                 color=color.Color(1.0, 0.95, 0.72, 1.0),
                 unlit=True,
                 position=(lx, light_y, lz),
                 scale=light_sc,
-            ))
+            )
+            light_ent.ignore = True
+            entities.append(light_ent)
 
         self.active_doors[key] = {
             'entity': entity,

@@ -44,6 +44,8 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
         self.prebuilt_room_collision_entities = {}
         self._visible_cells = set()
         self._visible_rooms = set()
+        self._visible_static_chunks = set()
+        self._visible_light_chunks = set()
         self._debug_light_fixtures_disabled = False
         self._collision_cells = set()
         self._collision_rooms = set()
@@ -91,6 +93,7 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
             scale=(COLS * CELL, 0.1, ROWS * CELL),
             collider='box',
         )
+        self.floor_collider.ignore = True
         self.static_entities = []
 
     def wall_at(self, r, c):
@@ -880,6 +883,20 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
         self._collision_cells = collision_cells
         self._collision_rooms = collision_rooms
 
+        wanted_chunks = frozenset(
+            self.static_chunk_for_cell(cell) for cell in render_cells
+        )
+        for chunk in self._visible_static_chunks - wanted_chunks:
+            self.set_render_enabled(self.prebuilt_static_chunks.get(chunk, ()), False)
+            if not self._debug_light_fixtures_disabled:
+                self.set_render_enabled(self.prebuilt_light_chunks.get(chunk, ()), False)
+        for chunk in wanted_chunks - self._visible_static_chunks:
+            self.set_render_enabled(self.prebuilt_static_chunks.get(chunk, ()), True)
+            if not self._debug_light_fixtures_disabled:
+                self.set_render_enabled(self.prebuilt_light_chunks.get(chunk, ()), True)
+        self._visible_static_chunks = wanted_chunks
+        self._visible_light_chunks = wanted_chunks
+
     def process_queues(self):
         visible_cells = self._visible_cells
         visible_rooms = self._visible_rooms
@@ -924,11 +941,18 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
             self.set_render_enabled(entities, False)
         for entities in self.prebuilt_room_render_entities.values():
             self.set_render_enabled(entities, False)
+        for entities in self.prebuilt_static_chunks.values():
+            self.set_render_enabled(entities, False)
+        for entities in self.prebuilt_light_chunks.values():
+            self.set_render_enabled(entities, False)
+        self._visible_static_chunks = set()
+        self._visible_light_chunks = set()
 
     def set_light_fixtures_debug_enabled(self, enabled):
         self._debug_light_fixtures_disabled = not enabled
-        for entities in self.prebuilt_light_chunks.values():
-            self.set_render_enabled(entities, enabled)
+        for chunk, entities in self.prebuilt_light_chunks.items():
+            visible = enabled and chunk in self._visible_static_chunks
+            self.set_render_enabled(entities, visible)
         self.update_rendered_scene(force=True)
 
     def initial_render(self):
