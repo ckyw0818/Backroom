@@ -182,6 +182,14 @@ def start_door_opened():
 
 
 def update_monster_pressure():
+    if all_monsters_active_cheat:
+        note_count = collected_note_count()
+        speed_multiplier = MONSTER_FINAL_NOTE_SPEED_MULTIPLIER if note_count >= 5 else 1.0
+        for monster in monsters:
+            set_monster_active(monster, True)
+            monster.set_speed_multiplier(speed_multiplier)
+        return
+
     if not start_door_opened():
         for monster in monsters:
             set_monster_active(monster, False)
@@ -194,6 +202,14 @@ def update_monster_pressure():
     for index, monster in enumerate(monsters):
         set_monster_active(monster, index < active_count)
         monster.set_speed_multiplier(speed_multiplier)
+
+
+def activate_all_monsters_cheat():
+    global all_monsters_active_cheat
+
+    all_monsters_active_cheat = True
+    update_monster_pressure()
+    print('cheat: all monsters active')
 
 
 def emit_noise(strength):
@@ -899,6 +915,7 @@ minimap_visible = False
 minimap_debug_disabled = False
 held_hud_debug_disabled = False
 light_fixtures_debug_disabled = False
+all_monsters_active_cheat = False
 exit_background_visible = False
 
 
@@ -1247,6 +1264,8 @@ def reset_map_progress():
         map_renderer.held_key_entity.enabled = False
     for note in map_renderer.held_note_entities.values():
         note.enabled = False
+    for note in getattr(map_renderer, 'held_note_slots', ()):
+        note.enabled = False
     for placeholder in map_renderer.held_note_placeholders:
         placeholder.enabled = False
     map_renderer.held_note_entities.clear()
@@ -1280,9 +1299,11 @@ def reset_map_progress():
 def reset_game_run():
     global death_state, death_timer, player_hearts, death_lost_heart_index
     global minimap_visible, heartbeat_rate, jumpscare_timer, jumpscare_monster, jumpscare_look_timer
+    global all_monsters_active_cheat
 
     reset_game_clear_sequence()
     reset_map_progress()
+    all_monsters_active_cheat = False
     player_hearts = MAX_PLAYER_HEARTS
     death_lost_heart_index = None
     death_state = 'alive'
@@ -1692,6 +1713,10 @@ def input(key):
 
     if key == 'escape':
         pause_game()
+        return
+
+    if key in ('-', 'minus'):
+        activate_all_monsters_cheat()
         return
 
     if key == '0':

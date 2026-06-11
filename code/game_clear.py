@@ -105,8 +105,8 @@ class EndingCredits:
                 self.add_credit_text(entry[1], (0, y, -1.2), 0.92)
                 y -= 0.108 * CREDIT_TEXT_SCALE_MULTIPLIER
             elif kind == 'pair':
-                self.add_credit_text(entry[1], (-0.09, y, -1.2), 0.56, origin=(1, 0))
-                self.add_credit_text(entry[2], (0.09, y, -1.2), 0.56, origin=(-1, 0))
+                self.add_credit_text(entry[1], (-0.09, y, -1.2), 0.56, origin=(0.5, 0))
+                self.add_credit_text(entry[2], (0.09, y, -1.2), 0.56, origin=(-0.5, 0))
                 y -= 0.071 * CREDIT_TEXT_SCALE_MULTIPLIER
             elif kind == 'asset':
                 self.add_credit_text(entry[1], (0, y, -1.2), 0.50)

@@ -206,7 +206,7 @@ class MainMenu:
         item = Text(
             parent=self.root,
             text=text,
-            origin=(-1, 0),
+            origin=(-0.5, 0),
             position=(x, y, -1.1),
             scale=scale,
             color=text_color,
@@ -219,7 +219,7 @@ class MainMenu:
         item = Text(
             parent=self.root,
             text=text,
-            origin=(1, 0),
+            origin=(0.5, 0),
             position=(x, y, -1.1),
             scale=scale,
             color=text_color,
@@ -249,12 +249,12 @@ class MainMenu:
         self.help_items.extend(self.help_back)
 
     def build_credit(self):
-        self.add_panel_text(self.credit_items, 'CREDIT', 0.300, 1.12).color = rgba(248, 221, 138, 250)
-        self.add_panel_text(self.credit_items, 'A GAME BY', 0.222, 0.55).color = rgba(210, 205, 176, 185)
-        self.add_panel_text(self.credit_items, 'Choi Yeonwoo / Seoyoon Son', 0.176, 0.76).color = rgba(235, 231, 205, 240)
-        self.add_panel_text(self.credit_items, 'Made with Python, Ursina, Panda3D', 0.115, 0.50).color = rgba(226, 222, 196, 205)
+        self.add_panel_text(self.credit_items, 'CREDIT', 0.300, 1.28).color = rgba(248, 221, 138, 250)
+        self.add_panel_text(self.credit_items, 'A GAME BY', 0.218, 0.70).color = rgba(210, 205, 176, 185)
+        self.add_panel_text(self.credit_items, 'Choi Yeonwoo / Seoyoon Son', 0.170, 0.92).color = rgba(235, 231, 205, 240)
+        self.add_panel_text(self.credit_items, 'Made with Python, Ursina, Panda3D', 0.100, 0.64).color = rgba(226, 222, 196, 205)
 
-        self.add_panel_text(self.credit_items, '3D MODEL ASSETS', 0.040, 0.52).color = rgba(248, 221, 138, 230)
+        self.add_panel_text(self.credit_items, '3D MODEL ASSETS', 0.020, 0.70).color = rgba(248, 221, 138, 230)
         assets = (
             ('door_ white_ wooden _Old - 4MB', 'Mehdi Shahsavan'),
             ('Lowpoly Bed', 'Mohamed199'),
@@ -263,15 +263,15 @@ class MainMenu:
             ('Low poly emergency exit sign', 'Mckai'),
             ('Keypad', 'Spellkaze'),
         )
-        y = -0.025
+        y = -0.052
         for name, author in assets:
-            self.add_right_text(self.credit_items, name, -0.045, y, 0.345, rgba(235, 231, 205, 230))
-            self.add_left_text(self.credit_items, f'by {author}', 0.050, y, 0.345, rgba(210, 205, 176, 190))
-            y -= 0.046
+            self.add_right_text(self.credit_items, name, -0.055, y, 0.50, rgba(235, 231, 205, 230))
+            self.add_left_text(self.credit_items, f'by {author}', 0.065, y, 0.50, rgba(210, 205, 176, 190))
+            y -= 0.055
 
-        self.add_panel_text(self.credit_items, 'Source: Sketchfab  |  License: CC BY', -0.318, 0.43).color = rgba(210, 205, 176, 185)
+        self.add_panel_text(self.credit_items, 'Source: Sketchfab  |  License: CC BY', -0.382, 0.56).color = rgba(210, 205, 176, 185)
 
-        self.credit_back = self.add_menu_button('Back', -0.385, lambda: self.set_mode('main'))
+        self.credit_back = self.add_menu_button('Back', -0.445, lambda: self.set_mode('main'))
         self.buttons.remove(self.credit_back)
         self.credit_items.extend(self.credit_back)
 
@@ -437,7 +437,7 @@ class PauseMenu:
         item = Text(
             parent=self.root,
             text=text,
-            origin=(-1, 0),
+            origin=(-0.5, 0),
             position=(x, y, -1.3),
             scale=scale,
             color=text_color,
@@ -453,7 +453,7 @@ class PauseMenu:
         item = Text(
             parent=self.root,
             text=text,
-            origin=(1, 0),
+            origin=(0.5, 0),
             position=(x, y, -1.3),
             scale=scale,
             color=text_color,

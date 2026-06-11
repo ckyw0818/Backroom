@@ -1,3 +1,4 @@
+import math
 import random
 
 from direct.showbase import ShowBaseGlobal
@@ -50,6 +51,7 @@ PAPER_GET_VOLUME = 1.0
 HELD_NOTE_START_POS = (-0.66, -0.40, -0.80)
 HELD_NOTE_SPACING = 0.118
 HELD_NOTE_SCALE = (0.1, 0.1)
+HELD_NOTE_TEXTURE_SIZE = 96
 START_ROOM_WALL_NOTE_SIZE = (0.25, 0.25)
 START_ROOM_WALL_NOTE_Y = 1.15
 START_ROOM_WALL_NOTE_OFFSET = 0.035
@@ -103,6 +105,7 @@ class DrawerMixin:
         self.note_placements = []
         self.note_placement_lookup = {}
         self.note_textures = {}
+        self.note_hud_textures = {}
         self.has_key = False
         self.key_taken = False
         self.held_key_entity = None
@@ -110,6 +113,8 @@ class DrawerMixin:
         self.collected_notes = set()
         self.held_note_entities = {}
         self.held_note_placeholders = []
+        self.held_note_slots = []
+        self.ensure_held_note_slots()
 
     def load_drawer_model(self):
         scene = ShowBaseGlobal.base.loader.loadModel(Filename.fromOsSpecific(str(DRAWER_MODEL_PATH)))
@@ -162,7 +167,7 @@ class DrawerMixin:
             self.note_placements.append(placement)
             self.note_placement_lookup[key] = placement
 
-        self.note_textures = self.load_note_textures()
+        self.note_textures, self.note_hud_textures = self.load_note_textures()
 
     def note_keypad_code(self):
         return ''.join(
@@ -172,11 +177,12 @@ class DrawerMixin:
 
     def load_note_textures(self):
         textures = {}
+        hud_textures = {}
         blood_path = PROJECT_DIR / 'asset' / 'texture' / 'blood.png'
         blood_image = PNMImage()
 
         if not blood_image.read(Filename.fromOsSpecific(str(blood_path))):
-            return textures
+            return textures, hud_textures
 
         for placement in self.note_placements:
             number = placement['number']
@@ -190,11 +196,72 @@ class DrawerMixin:
             self.multiply_blood_onto_note(note_image, blood_image, placement['blood_count'], rng)
             texture = PandaTexture(f'note_{placement["room_cell"]}_{placement["drawer_name"]}_{number}')
             texture.load(note_image)
-            texture.setMinfilter(SamplerState.FT_linear_mipmap_linear)
+            texture.setMinfilter(SamplerState.FT_linear)
             texture.setMagfilter(SamplerState.FT_linear)
             textures[placement['key']] = texture
 
-        return textures
+            hud_image = self.downsample_note_image(note_image, HELD_NOTE_TEXTURE_SIZE)
+            hud_texture = PandaTexture(f'note_hud_{placement["room_cell"]}_{placement["drawer_name"]}_{number}')
+            hud_texture.load(hud_image)
+            hud_texture.setMinfilter(SamplerState.FT_linear)
+            hud_texture.setMagfilter(SamplerState.FT_linear)
+            hud_textures[placement['key']] = hud_texture
+
+        return textures, hud_textures
+
+    def downsample_note_image(self, source, size):
+        source_w = max(1, source.getXSize())
+        source_h = max(1, source.getYSize())
+        target = PNMImage(size, size, 4)
+        has_alpha = source.hasAlpha()
+
+        for y in range(size):
+            source_y = (y + 0.5) * source_h / size - 0.5
+            y0 = max(0, min(source_h - 1, int(math.floor(source_y))))
+            y1 = min(source_h - 1, y0 + 1)
+            ty = max(0.0, min(1.0, source_y - y0))
+
+            for x in range(size):
+                source_x = (x + 0.5) * source_w / size - 0.5
+                x0 = max(0, min(source_w - 1, int(math.floor(source_x))))
+                x1 = min(source_w - 1, x0 + 1)
+                tx = max(0.0, min(1.0, source_x - x0))
+
+                c00 = source.getXel(x0, y0)
+                c10 = source.getXel(x1, y0)
+                c01 = source.getXel(x0, y1)
+                c11 = source.getXel(x1, y1)
+                top = (
+                    c00.x + (c10.x - c00.x) * tx,
+                    c00.y + (c10.y - c00.y) * tx,
+                    c00.z + (c10.z - c00.z) * tx,
+                )
+                bottom = (
+                    c01.x + (c11.x - c01.x) * tx,
+                    c01.y + (c11.y - c01.y) * tx,
+                    c01.z + (c11.z - c01.z) * tx,
+                )
+                rgb = (
+                    top[0] + (bottom[0] - top[0]) * ty,
+                    top[1] + (bottom[1] - top[1]) * ty,
+                    top[2] + (bottom[2] - top[2]) * ty,
+                )
+
+                if has_alpha:
+                    a00 = source.getAlpha(x0, y0)
+                    a10 = source.getAlpha(x1, y0)
+                    a01 = source.getAlpha(x0, y1)
+                    a11 = source.getAlpha(x1, y1)
+                    alpha_top = a00 + (a10 - a00) * tx
+                    alpha_bottom = a01 + (a11 - a01) * tx
+                    alpha = alpha_top + (alpha_bottom - alpha_top) * ty
+                else:
+                    alpha = 1.0
+
+                target.setXel(x, y, rgb[0], rgb[1], rgb[2])
+                target.setAlpha(x, y, alpha)
+
+        return target
 
     def multiply_blood_onto_note(self, note_image, blood_image, count, rng):
         spots = self.non_overlapping_blood_spots(
@@ -572,6 +639,7 @@ class DrawerMixin:
             'node': note_node,
             'number': number,
             'texture': texture,
+            'hud_texture': self.note_hud_textures.get(placement['key'], texture),
             'blood_count': placement['blood_count'],
         }
 
@@ -817,8 +885,9 @@ class DrawerMixin:
                     continue
 
             texture = self.note_textures.get(placement['key'])
-            if texture:
-                self.show_held_note(drawer_key, {'texture': texture})
+            hud_texture = self.note_hud_textures.get(placement['key'])
+            if texture or hud_texture:
+                self.show_held_note(drawer_key, {'texture': texture, 'hud_texture': hud_texture})
 
         if collected_any:
             play_transient_sound('asset/sound/paper.wav', volume=PAPER_GET_VOLUME, ttl=2.5)
@@ -949,17 +1018,38 @@ class DrawerMixin:
         placeholder.setBin('fixed', 100)
         placeholder.setDepthWrite(False)
         placeholder.setDepthTest(False)
+        placeholder.enabled = False
         self.held_note_placeholders.append(placeholder)
+
+    def ensure_held_note_slots(self):
+        self.ensure_note_placeholders()
+
+        while len(self.held_note_slots) < NOTE_COUNT:
+            index = len(self.held_note_slots)
+            slot = self._note_ui_node(f'held_note_{index}', index, bin_sort=101)
+            slot.enabled = False
+            self.held_note_slots.append(slot)
 
     def show_held_note(self, key, note_data):
         if key in self.held_note_entities:
-            self.held_note_entities[key].show()
+            self.held_note_entities[key].enabled = True
             return
 
-        self.ensure_note_placeholders()
+        self.ensure_held_note_slots()
         index = len(self.held_note_entities)
-        np = self._note_ui_node(f'held_note_{index}', index, texture=note_data['texture'], bin_sort=101)
-        self.held_note_entities[key] = np
+
+        if index >= len(self.held_note_slots):
+            return
+
+        for placeholder in self.held_note_placeholders:
+            placeholder.enabled = True
+
+        texture = note_data.get('hud_texture') or note_data.get('texture')
+        slot = self.held_note_slots[index]
+        if texture:
+            slot.setTexture(texture, 1)
+        slot.enabled = True
+        self.held_note_entities[key] = slot
 
     def set_held_notes_visible(self, visible):
         for placeholder in self.held_note_placeholders:
