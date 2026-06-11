@@ -232,6 +232,10 @@ class GameClearSequence:
     def is_active(self):
         return self.state != 'inactive'
 
+    def hide_held_notes(self):
+        if hasattr(self.map_renderer, 'set_held_notes_visible'):
+            self.map_renderer.set_held_notes_visible(False)
+
     def start(self):
         if self.is_active():
             return False
@@ -253,6 +257,7 @@ class GameClearSequence:
         self.player.speed = 0
         self.crosshair.set_visible(False)
         self.minimap.set_enabled(False)
+        self.hide_held_notes()
         self.fade_monster_sounds(1.0)
         self.ending_credit_music.stop()
         self.ending_credit_music.volume = 0.0
@@ -268,6 +273,7 @@ class GameClearSequence:
         self.timer += time.dt
         self.update_exit_background()
         self.update_autowalk()
+        self.hide_held_notes()
 
         fade_progress = min(1.0, self.timer / GAME_CLEAR_AUDIO_FADE_TIME)
         fade_amount = 1.0 - smoothstep01(fade_progress)

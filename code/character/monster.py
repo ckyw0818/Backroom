@@ -1,6 +1,6 @@
 import math
 import random
-from collections import deque
+from heapq import heappop, heappush
 from pathlib import Path
 
 from ursina import Audio, Entity, Vec3, color, time
@@ -46,6 +46,7 @@ MONSTER_INVESTIGATE_SPEED = RUN_SPEED * 0.4
 MONSTER_DOOR_STALK_SPEED = RUN_SPEED * 0.75
 
 MONSTER_COLLISION_RADIUS = 0.48
+PATH_NEIGHBORS = ((-1, 0), (1, 0), (0, -1), (0, 1))
 
 class MonsterAI:
     def __init__(
@@ -121,19 +122,26 @@ class MonsterAI:
     def set_sound_volume_scale(self, scale):
         self.sound_volume_scale = max(0.0, min(1.0, scale))
 
-        if self.sound_volume_scale <= 0.02:
-            self.stop_chase_sound()
-            self.stop_roar_sound()
-            return
+        chase_sound = self.sounds.get('chase')
+        roar_sound = self.sounds.get('roar')
 
-        if self.chase_sound_active and self.sounds.get('chase'):
-            self.sounds['chase'].volume = self.chase_sound_volume()
+        if chase_sound and (self.chase_sound_active or getattr(chase_sound, 'playing', False)):
+            chase_sound.volume = self.chase_sound_volume()
 
-        if self.roar_sound_active and self.sounds.get('roar'):
-            self.sounds['roar'].volume = self.roar_sound_volume()
+        if roar_sound and (self.roar_sound_active or getattr(roar_sound, 'playing', False)):
+            roar_sound.volume = self.roar_sound_volume()
+
+        if self.sound_volume_scale <= 0.0:
+            self.silence_all_sounds()
 
     def set_speed_multiplier(self, multiplier):
         self.speed_multiplier = max(0.01, multiplier)
+
+    def stop_sound(self, sound):
+        try:
+            sound.stop(destroy=False)
+        except TypeError:
+            sound.stop()
 
     def reset_to_spawn(self):
         self.reset_to_cell(self.spawn_cell)
@@ -203,7 +211,7 @@ class MonsterAI:
             self.jumpscare_seen_this_chase = False
             self.start_chase_sound()
         elif sound:
-            sound.stop()
+            self.stop_sound(sound)
             sound.volume = 0.55 * self.sound_volume_scale
             sound.play()
 
@@ -226,7 +234,7 @@ class MonsterAI:
             return
 
         sound = self.sounds['chase']
-        sound.stop()
+        self.stop_sound(sound)
         sound.volume = self.chase_sound_volume()
         sound.play()
         self.chase_sound_active = True
@@ -238,7 +246,7 @@ class MonsterAI:
             self.chase_sound_active = False
             return
 
-        sound.stop()
+        self.stop_sound(sound)
         sound.volume = 0.0
         self.chase_sound_active = False
 
@@ -277,7 +285,7 @@ class MonsterAI:
             return
 
         sound = self.sounds['roar']
-        sound.stop()
+        self.stop_sound(sound)
         sound.volume = self.roar_sound_volume()
         sound.play()
         self.roar_sound_active = True
@@ -287,7 +295,7 @@ class MonsterAI:
 
         if sound:
             sound.volume = 0.0
-            sound.stop()
+            self.stop_sound(sound)
 
         self.roar_sound_active = False
 
@@ -300,7 +308,7 @@ class MonsterAI:
             if not sound:
                 continue
             sound.volume = 0.0
-            sound.stop()
+            self.stop_sound(sound)
 
         self.chase_sound_active = False
         self.roar_sound_active = False
@@ -454,31 +462,33 @@ class MonsterAI:
         if start not in self.walkable or goal not in self.walkable:
             return []
 
-        queue = deque([start])
+        queue = []
+        heappush(queue, (0, 0, start))
         came_from = {start: None}
+        cost_so_far = {start: 0}
+        counter = 0
 
         while queue:
-            cell = queue.popleft()
+            _, _, cell = heappop(queue)
 
             if cell == goal:
                 break
 
             r, c = cell
-            neighbors = [
-                (r - 1, c),
-                (r + 1, c),
-                (r, c - 1),
-                (r, c + 1),
-            ]
-
-            random.shuffle(neighbors)
-
-            for nxt in neighbors:
-                if nxt in came_from or nxt not in self.walkable:
+            for dr, dc in PATH_NEIGHBORS:
+                nxt = (r + dr, c + dc)
+                if nxt not in self.walkable:
                     continue
 
+                new_cost = cost_so_far[cell] + 1
+                if nxt in cost_so_far and new_cost >= cost_so_far[nxt]:
+                    continue
+
+                cost_so_far[nxt] = new_cost
+                priority = new_cost + self.grid_distance(nxt, goal)
+                counter += 1
                 came_from[nxt] = cell
-                queue.append(nxt)
+                heappush(queue, (priority, counter, nxt))
 
         if goal not in came_from:
             return []

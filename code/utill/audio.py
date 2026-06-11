@@ -1,4 +1,9 @@
-from ursina import Audio, destroy, invoke
+from ursina import Audio
+
+
+TRANSIENT_VOICES_PER_SOUND = 4
+_sound_pools = {}
+_sound_pool_indices = {}
 
 
 def set_audio_pitch(sound, pitch):
@@ -21,28 +26,48 @@ def set_audio_pitch(sound, pitch):
                 pass
 
 
+def _get_sound_pool(path):
+    key = str(path)
+    pool = _sound_pools.get(key)
+
+    if pool is None:
+        pool = [
+            Audio(key, autoplay=False, volume=0.0)
+            for _ in range(TRANSIENT_VOICES_PER_SOUND)
+        ]
+        _sound_pools[key] = pool
+        _sound_pool_indices[key] = 0
+
+    return key, pool
+
+
 def cleanup_audio(sound):
+    if not sound:
+        return
+
     try:
         sound.stop()
     except Exception:
         pass
 
+
+def play_transient_sound(path, volume=1.0, pitch=None, start=None, ttl=3.0):
+    key, pool = _get_sound_pool(path)
+    index = _sound_pool_indices[key] % len(pool)
+    _sound_pool_indices[key] = index + 1
+    sound = pool[index]
+
     try:
-        destroy(sound)
+        sound.stop()
     except Exception:
         pass
 
-
-def play_transient_sound(path, volume=1.0, pitch=None, start=None, ttl=3.0):
-    sound = Audio(path, autoplay=False, volume=volume)
-
-    if pitch is not None:
-        set_audio_pitch(sound, pitch)
+    sound.volume = volume
+    set_audio_pitch(sound, pitch if pitch is not None else 1.0)
 
     if start is None:
         sound.play()
     else:
         sound.play(start=start)
 
-    invoke(cleanup_audio, sound, delay=ttl)
     return sound

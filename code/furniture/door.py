@@ -137,6 +137,7 @@ class DoorMixin(BedMixin, DrawerMixin):
         self._door_set = frozenset(generated_doors)
 
         self._cell_door_rooms = {}
+        self._room_door_keys = {}
         self.door_room_cells = set()
         self.exit_room_cell = self.random_edge_exit_room_cell(self.start_room_cell)
         self.exit_room_cells = frozenset((self.exit_room_cell,)) if self.exit_room_cell else frozenset()
@@ -377,11 +378,8 @@ class DoorMixin(BedMixin, DrawerMixin):
         if room_cell is None:
             return None
 
-        for key, door in self.active_doors.items():
-            r, c, face = key
-            found_room_cell, _ = self.door_room_for_face(r, c, face)
-
-            if found_room_cell == room_cell:
+        for key in self._room_door_keys.get(room_cell, ()):
+            if key in self.active_doors:
                 return key
 
         return None
@@ -754,6 +752,7 @@ class DoorMixin(BedMixin, DrawerMixin):
 
         self.active_keypads[door_key] = {
             'entity': keypad_entity,
+            'position': keypad_entity.position,
             'display': display,
             'buttons': buttons,
             'input': '',
@@ -763,6 +762,7 @@ class DoorMixin(BedMixin, DrawerMixin):
             'pending_unlock': False,
             'door_key': door_key,
         }
+        self.index_active_object(self.active_keypads_by_cell, door_key, keypad_entity.position)
 
     def add_door_decoration(self, entities, x, z, face, near_lights, wall_collider=None):
         key = self.door_key(round(z / CELL), round(x / CELL), face)
@@ -846,8 +846,18 @@ class DoorMixin(BedMixin, DrawerMixin):
             'unlock_open_timer': 0.0,
             'pending_open': False,
         }
+        self.index_active_object(self.active_doors_by_cell, key, pos)
+        room_cell, _ = self.door_room_for_face(*key)
+        room_door_keys = self._room_door_keys.setdefault(room_cell, [])
+        if key not in room_door_keys:
+            room_door_keys.append(key)
 
     def set_door_wall_collision(self, wall_collider, closed):
+        current = getattr(wall_collider, '_collision_closed', None)
+        if current == closed:
+            return
+
+        wall_collider._collision_closed = closed
         wall_collider.collider = 'box' if closed else None
 
         for collider in getattr(wall_collider, '_door_side_colliders', ()):
@@ -890,7 +900,11 @@ class DoorMixin(BedMixin, DrawerMixin):
         nearest_t = KEYPAD_INTERACT_RAY_DISTANCE
         render = ShowBaseGlobal.base.render
 
-        for keypad_key, keypad in self.active_keypads.items():
+        for keypad_key, keypad in self.active_items_near(
+            self.active_keypads,
+            self.active_keypads_by_cell,
+            KEYPAD_INTERACT_RAY_DISTANCE * 2.0,
+        ):
             if not keypad['entity'].enabled:
                 continue
 
@@ -1055,7 +1069,11 @@ class DoorMixin(BedMixin, DrawerMixin):
         nearest_t = DOOR_INTERACT_RAY_DISTANCE
         ray_x, ray_z = self.player_forward_xz()
 
-        for key, door in self.active_doors.items():
+        for key, door in self.active_items_near(
+            self.active_doors,
+            self.active_doors_by_cell,
+            DOOR_INTERACT_RAY_DISTANCE * 2.0,
+        ):
             x, _, z = door['position']
             dx = x - self.player.x
             dz = z - self.player.z
@@ -1090,7 +1108,11 @@ class DoorMixin(BedMixin, DrawerMixin):
         nearest_t = float('inf')
         ray_x, ray_z = self.player_forward_xz()
 
-        for key, door in self.active_doors.items():
+        for key, door in self.active_items_near(
+            self.active_doors,
+            self.active_doors_by_cell,
+            DOOR_INTERACT_RAY_DISTANCE * 2.0,
+        ):
             x, _, z = door['position']
             dx = x - self.player.x
             dz = z - self.player.z

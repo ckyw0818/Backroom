@@ -119,6 +119,7 @@ uniform float line_noise_thickness;
 uniform float line_noise_min_len;
 uniform float line_noise_max_len;
 uniform float line_noise_speed;
+uniform float effect_strength;
 
 in vec2 uv;
 out vec4 fragColor;
@@ -219,6 +220,7 @@ float horizontal_line_noise(vec2 p) {
 void main() {
     vec2 p = lens(uv);
 
+    vec3 original = sample_tex(tex, p);
     vec3 c = process(p);
 
     float ln = horizontal_line_noise(p);
@@ -239,6 +241,7 @@ void main() {
 
     c = posterize(c, posterize_levels);
     c = clamp(c, 0.0, 1.0);
+    c = clamp(mix(original, c, effect_strength), 0.0, 1.0);
 
     fragColor = vec4(c, 1.0);
 }
@@ -279,6 +282,7 @@ class PostEffects:
         line_noise_min_len=0.12,
         line_noise_max_len=0.48,
         line_noise_speed=24.0,
+        effect_strength=1.0,
 
         jitter_speed=1,
         div=4
@@ -320,11 +324,13 @@ class PostEffects:
         self.line_noise_min_len = line_noise_min_len
         self.line_noise_max_len = line_noise_max_len
         self.line_noise_speed = line_noise_speed
+        self.effect_strength = effect_strength
 
         self.jitter_speed = jitter_speed
         self.frame = 0
         self.threat_level = 0.0
         self.threat_target = 0.0
+        self._si_cache = {}
 
         self.scene_tex = Texture()
         self.bright_tex = Texture()
@@ -376,10 +382,21 @@ class PostEffects:
         self.pix_d = self.rand_pix(self.pix_d_range)
         self.pix_e = self.rand_pix(self.pix_e_range)
 
+    def _si_f(self, node, name, value):
+        prev = self._si_cache.get(name)
+        if prev != value:
+            self._si_cache[name] = value
+            node.setShaderInput(name, value)
+
+    def _si_v2(self, node, name, value):
+        prev = self._si_cache.get(name)
+        if prev is None or abs(prev[0] - value[0]) > 1e-5 or abs(prev[1] - value[1]) > 1e-5:
+            self._si_cache[name] = value
+            node.setShaderInput(name, value)
+
     def set_inputs(self):
         threat = max(0.0, min(1.0, self.threat_level))
         heavy = threat * threat
-        ultra = heavy * threat
         line_threat = max(0.0, min(1.0, (threat - 0.28) / 0.72))
         line_heavy = line_threat * line_threat
 
@@ -425,40 +442,42 @@ class PostEffects:
         line_noise_max_len = min(0.86, self.line_noise_max_len + line_threat * 0.16)
         line_noise_speed = self.line_noise_speed * (1.0 + line_threat * 2.4)
 
-        self.bright_quad.setShaderInput('threshold', self.bloom_threshold)
-        self.bright_quad.setShaderInput('soft', self.bloom_soft)
+        si = self._si_f
+        si(self.bright_quad, 'threshold', self.bloom_threshold)
+        si(self.bright_quad, 'soft', self.bloom_soft)
+        si(self.blur_a_quad, 'radius', self.bloom_radius)
+        si(self.blur_b_quad, 'radius', self.bloom_radius)
 
-        self.blur_a_quad.setShaderInput('radius', self.bloom_radius)
-        self.blur_b_quad.setShaderInput('radius', self.bloom_radius)
+        si(self.final_quad, 'blur', blur)
+        si(self.final_quad, 'sharp', sharp)
+        si(self.final_quad, 'lens_k', self.lens_k)
+        si(self.final_quad, 'lens_zoom', self.lens_zoom)
+        si(self.final_quad, 'bloom_strength', bloom_strength)
+        si(self.final_quad, 'exposure', exposure)
 
-        self.final_quad.setShaderInput('blur', blur)
-        self.final_quad.setShaderInput('sharp', sharp)
-        self.final_quad.setShaderInput('lens_k', self.lens_k)
-        self.final_quad.setShaderInput('lens_zoom', self.lens_zoom)
-        self.final_quad.setShaderInput('bloom_strength', bloom_strength)
-        self.final_quad.setShaderInput('exposure', exposure)
+        sv = self._si_v2
+        sv(self.final_quad, 'pix_a', pix_a)
+        sv(self.final_quad, 'pix_b', pix_b)
+        sv(self.final_quad, 'pix_c', pix_c)
+        sv(self.final_quad, 'pix_d', pix_d)
+        sv(self.final_quad, 'pix_e', pix_e)
 
-        self.final_quad.setShaderInput('pix_a', pix_a)
-        self.final_quad.setShaderInput('pix_b', pix_b)
-        self.final_quad.setShaderInput('pix_c', pix_c)
-        self.final_quad.setShaderInput('pix_d', pix_d)
-        self.final_quad.setShaderInput('pix_e', pix_e)
+        si(self.final_quad, 'pix_a_opacity', pix_a_opacity)
+        si(self.final_quad, 'pix_b_opacity', pix_b_opacity)
+        si(self.final_quad, 'pix_c_opacity', pix_c_opacity)
+        si(self.final_quad, 'pix_d_opacity', pix_d_opacity)
+        si(self.final_quad, 'pix_e_opacity', pix_e_opacity)
 
-        self.final_quad.setShaderInput('pix_a_opacity', pix_a_opacity)
-        self.final_quad.setShaderInput('pix_b_opacity', pix_b_opacity)
-        self.final_quad.setShaderInput('pix_c_opacity', pix_c_opacity)
-        self.final_quad.setShaderInput('pix_d_opacity', pix_d_opacity)
-        self.final_quad.setShaderInput('pix_e_opacity', pix_e_opacity)
+        si(self.final_quad, 'posterize_levels', posterize_levels)
 
-        self.final_quad.setShaderInput('posterize_levels', posterize_levels)
-
-        self.final_quad.setShaderInput('line_noise_strength', line_noise_strength)
-        self.final_quad.setShaderInput('line_noise_density', line_noise_density)
-        self.final_quad.setShaderInput('line_noise_rows', line_noise_rows)
-        self.final_quad.setShaderInput('line_noise_thickness', line_noise_thickness)
-        self.final_quad.setShaderInput('line_noise_min_len', line_noise_min_len)
-        self.final_quad.setShaderInput('line_noise_max_len', line_noise_max_len)
-        self.final_quad.setShaderInput('line_noise_speed', line_noise_speed)
+        si(self.final_quad, 'line_noise_strength', line_noise_strength)
+        si(self.final_quad, 'line_noise_density', line_noise_density)
+        si(self.final_quad, 'line_noise_rows', line_noise_rows)
+        si(self.final_quad, 'line_noise_thickness', line_noise_thickness)
+        si(self.final_quad, 'line_noise_min_len', line_noise_min_len)
+        si(self.final_quad, 'line_noise_max_len', line_noise_max_len)
+        si(self.final_quad, 'line_noise_speed', line_noise_speed)
+        si(self.final_quad, 'effect_strength', self.effect_strength)
 
         tm = ClockObject.getGlobalClock().getFrameTime()
         self.final_quad.setShaderInput('time', tm)
@@ -472,8 +491,14 @@ class PostEffects:
 
         self.set_inputs()
 
+    def cleanup(self):
+        self.manager.cleanup()
+
     def set_threat(self, amount):
-        self.threat_target = 0.0
+        self.threat_target = max(0.0, min(1.0, amount))
+
+    def set_effect_strength(self, amount):
+        self.effect_strength = max(0.0, min(1.5, amount))
 
     def flicker(self):
         pass

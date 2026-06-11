@@ -52,12 +52,12 @@ LOADING_HINTS = (
 )
 
 class TextMenuButton:
-    def __init__(self, parent, text, y, callback):
+    def __init__(self, parent, text, y, callback, x=0.0, width=0.36, label_scale=1.35):
         self.button = Button(
             parent=parent,
             text='',
-            position=(0, y, -1.2),
-            scale=(0.36, 0.082),
+            position=(x, y, -1.2),
+            scale=(width, 0.082),
             color=rgba(0, 0, 0, 0),
             highlight_color=rgba(0, 0, 0, 0),
             pressed_color=rgba(0, 0, 0, 0),
@@ -69,8 +69,8 @@ class TextMenuButton:
             parent=parent,
             text=f'[ {text} ]',
             origin=(0, 0),
-            position=(0, y + 0.002, -1.3),
-            scale=1.35,
+            position=(x, y + 0.002, -1.3),
+            scale=label_scale,
             color=rgba(235, 231, 205, 255),
         )
         self.label.always_on_top = True
@@ -80,8 +80,10 @@ class TextMenuButton:
 
 
 class MainMenu:
-    def __init__(self, start_callback):
+    def __init__(self, start_callback, post_effect_getter=None, post_effect_setter=None):
         self.start_callback = start_callback
+        self.post_effect_getter = post_effect_getter or (lambda: 1.0)
+        self.post_effect_setter = post_effect_setter or (lambda value: None)
         self.root = Entity(parent=camera.ui)
         self.anim_time = 0.0
         self.background_root = Entity(parent=self.root, position=(0, 0, 0.8))
@@ -120,6 +122,7 @@ class MainMenu:
         self.buttons = []
         self.help_items = []
         self.credit_items = []
+        self.settings_items = []
         self.loading_items = []
         self.footer = Text(
             parent=self.root,
@@ -157,10 +160,12 @@ class MainMenu:
 
         self.add_menu_button('Start', 0.09, self.start_callback)
         self.add_menu_button('Help', -0.005, lambda: self.set_mode('help'))
-        self.add_menu_button('Credit', -0.10, lambda: self.set_mode('credit'))
-        self.add_menu_button('Quit', -0.195, application.quit)
+        self.add_menu_button('Settings', -0.10, lambda: self.set_mode('settings'))
+        self.add_menu_button('Credit', -0.195, lambda: self.set_mode('credit'))
+        self.add_menu_button('Quit', -0.290, application.quit)
         self.build_help()
         self.build_credit()
+        self.build_settings()
         self.set_mode('main')
 
     def update(self):
@@ -179,8 +184,8 @@ class MainMenu:
                 continue
             label.color = rgba(246, 214, 122, 255) if button.hovered else rgba(235, 231, 205, 255)
 
-    def add_menu_button(self, text, y, callback):
-        button, label = TextMenuButton(self.root, text, y, callback).as_pair()
+    def add_menu_button(self, text, y, callback, x=0.0, width=0.36, label_scale=1.35):
+        button, label = TextMenuButton(self.root, text, y, callback, x=x, width=width, label_scale=label_scale).as_pair()
         self.buttons.append((button, label))
         return button, label
 
@@ -270,13 +275,47 @@ class MainMenu:
         self.buttons.remove(self.credit_back)
         self.credit_items.extend(self.credit_back)
 
+    def build_settings(self):
+        self.add_panel_text(self.settings_items, 'SETTINGS', 0.270, 1.24).color = rgba(248, 221, 138, 250)
+        self.add_panel_text(self.settings_items, 'Post Effect', 0.125, 0.72).color = rgba(235, 231, 205, 235)
+        self.post_effect_value = self.add_panel_text(self.settings_items, '', 0.035, 0.70)
+        self.post_effect_value.color = rgba(248, 221, 138, 245)
+
+        self.settings_minus = self.add_menu_button('-', -0.080, self.decrease_post_effect, x=-0.090, width=0.10, label_scale=1.15)
+        self.settings_plus = self.add_menu_button('+', -0.080, self.increase_post_effect, x=0.090, width=0.10, label_scale=1.15)
+        self.settings_back = self.add_menu_button('Back', -0.300, lambda: self.set_mode('main'))
+
+        for pair in (self.settings_minus, self.settings_plus, self.settings_back):
+            self.buttons.remove(pair)
+            self.settings_items.extend(pair)
+
+        self.update_post_effect_value()
+
+    def change_post_effect(self, delta):
+        value = max(0.0, min(1.5, self.post_effect_getter() + delta))
+        self.post_effect_setter(value)
+        self.update_post_effect_value()
+
+    def decrease_post_effect(self):
+        self.change_post_effect(-0.1)
+
+    def increase_post_effect(self):
+        self.change_post_effect(0.1)
+
+    def update_post_effect_value(self):
+        if hasattr(self, 'post_effect_value'):
+            self.post_effect_value.text = f'{int(round(self.post_effect_getter() * 100))}%'
+
     def set_mode(self, mode):
         showing_main = mode == 'main'
         showing_help = mode == 'help'
         showing_credit = mode == 'credit'
+        showing_settings = mode == 'settings'
         showing_loading = mode == 'loading'
         if showing_loading:
             self.loading_hint.text = random.choice(LOADING_HINTS)
+        if showing_settings:
+            self.update_post_effect_value()
         self.title.enabled = showing_main
         self.footer.enabled = showing_main
 
@@ -287,6 +326,8 @@ class MainMenu:
             item.enabled = showing_help
         for item in self.credit_items:
             item.enabled = showing_credit
+        for item in self.settings_items:
+            item.enabled = showing_settings
         for item in self.loading_items:
             item.enabled = showing_loading
 
@@ -300,6 +341,7 @@ class MainMenu:
         result = list(self.buttons)
         result.append(self.help_back)
         result.append(self.credit_back)
+        result.extend((self.settings_minus, self.settings_plus, self.settings_back))
         return result
 
     def set_visible(self, visible):
@@ -312,8 +354,10 @@ class MainMenu:
 
 
 class PauseMenu:
-    def __init__(self, resume_callback, quit_callback):
+    def __init__(self, resume_callback, quit_callback, post_effect_getter=None, post_effect_setter=None):
         self.resume_callback = resume_callback
+        self.post_effect_getter = post_effect_getter or (lambda: 1.0)
+        self.post_effect_setter = post_effect_setter or (lambda value: None)
         self.root = Entity(parent=camera.ui, enabled=False)
         self.mode = 'main'
         self.dim = Entity(
@@ -340,11 +384,13 @@ class PauseMenu:
         self.title.setDepthWrite(False)
         self.title.setDepthTest(False)
         self.buttons = [
-            TextMenuButton(self.root, 'Resume', 0.00, resume_callback).as_pair(),
-            TextMenuButton(self.root, 'Help', -0.105, lambda: self.set_mode('help')).as_pair(),
-            TextMenuButton(self.root, 'Quit Game', -0.210, quit_callback).as_pair(),
+            TextMenuButton(self.root, 'Resume', 0.055, resume_callback).as_pair(),
+            TextMenuButton(self.root, 'Help', -0.050, lambda: self.set_mode('help')).as_pair(),
+            TextMenuButton(self.root, 'Settings', -0.155, lambda: self.set_mode('settings')).as_pair(),
+            TextMenuButton(self.root, 'Quit Game', -0.260, quit_callback).as_pair(),
         ]
         self.help_items = []
+        self.settings_items = []
         for button, label in self.buttons:
             button.setBin('fixed', 130)
             button.setDepthWrite(False)
@@ -353,6 +399,7 @@ class PauseMenu:
             label.setDepthWrite(False)
             label.setDepthTest(False)
         self.build_help()
+        self.build_settings()
         self.set_visible(False)
 
     def update(self):
@@ -363,7 +410,7 @@ class PauseMenu:
 
     def handle_key(self, key):
         if key == 'escape':
-            if self.mode == 'help':
+            if self.mode in ('help', 'settings'):
                 self.set_mode('main')
             else:
                 self.resume_callback()
@@ -443,20 +490,78 @@ class PauseMenu:
             label.setDepthTest(False)
         self.help_items.extend(self.help_back)
 
+    def build_settings(self):
+        self.add_panel_text(self.settings_items, 'SETTINGS', 0.250, 1.20).color = rgba(248, 221, 138, 250)
+        self.add_panel_text(self.settings_items, 'Post Effect', 0.092, 0.72).color = rgba(235, 231, 205, 235)
+        self.post_effect_value = self.add_panel_text(self.settings_items, '', 0.004, 0.70)
+        self.post_effect_value.color = rgba(248, 221, 138, 245)
+
+        self.settings_minus = TextMenuButton(
+            self.root,
+            '-',
+            -0.112,
+            self.decrease_post_effect,
+            x=-0.090,
+            width=0.10,
+            label_scale=1.15,
+        ).as_pair()
+        self.settings_plus = TextMenuButton(
+            self.root,
+            '+',
+            -0.112,
+            self.increase_post_effect,
+            x=0.090,
+            width=0.10,
+            label_scale=1.15,
+        ).as_pair()
+        self.settings_back = TextMenuButton(self.root, 'Back', -0.335, lambda: self.set_mode('main')).as_pair()
+
+        for button, label in (self.settings_minus, self.settings_plus, self.settings_back):
+            button.setBin('fixed', 130)
+            button.setDepthWrite(False)
+            button.setDepthTest(False)
+            label.setBin('fixed', 130)
+            label.setDepthWrite(False)
+            label.setDepthTest(False)
+            self.settings_items.extend((button, label))
+
+        self.update_post_effect_value()
+
+    def change_post_effect(self, delta):
+        value = max(0.0, min(1.5, self.post_effect_getter() + delta))
+        self.post_effect_setter(value)
+        self.update_post_effect_value()
+
+    def decrease_post_effect(self):
+        self.change_post_effect(-0.1)
+
+    def increase_post_effect(self):
+        self.change_post_effect(0.1)
+
+    def update_post_effect_value(self):
+        if hasattr(self, 'post_effect_value'):
+            self.post_effect_value.text = f'{int(round(self.post_effect_getter() * 100))}%'
+
     def set_mode(self, mode):
         self.mode = mode
         showing_main = mode == 'main'
         showing_help = mode == 'help'
+        showing_settings = mode == 'settings'
+        if showing_settings:
+            self.update_post_effect_value()
         self.title.enabled = showing_main
         for button, label in self.buttons:
             button.enabled = showing_main and self.root.enabled
             label.enabled = showing_main and self.root.enabled
         for item in self.help_items:
             item.enabled = showing_help and self.root.enabled
+        for item in self.settings_items:
+            item.enabled = showing_settings and self.root.enabled
 
     def _all_buttons(self):
         result = list(self.buttons)
         result.append(self.help_back)
+        result.extend((self.settings_minus, self.settings_plus, self.settings_back))
         return result
 
     def set_visible(self, visible):

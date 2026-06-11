@@ -149,12 +149,14 @@ class Minimap:
         self.map_dirty = True
         self.map_rebuild_timer = 0.0
         self.last_map_player_cell = None
+        self._last_map_offset = None
 
         self.scanning = False
         self.scan_origin = (0, 0)
         self.scan_wave = 0.0
         self.scan_max = 0.0
         self.scan_cooldown = 0.0
+        self._last_cooldown_progress = -1.0
         self.pending_monster_pulse_dists = [None for _ in self.monsters]
         self.pending_monster_warn_indices = [None for _ in self.monsters]
 
@@ -250,6 +252,7 @@ class Minimap:
         )
         self.map_layer.set_shader_input('clip_radius', self.ui_radius())
         self.map_layer.set_shader_input('map_offset', Vec2(0.0, 0.0))
+        self._last_map_offset = (0.0, 0.0)
 
         self.vignette = Entity(
             parent=self.root,
@@ -454,6 +457,8 @@ class Minimap:
                 self.door_indicator_specs_by_floor.setdefault((fr, fc), []).append(spec)
 
     def set_enabled(self, enabled):
+        if self.enabled == enabled and getattr(self.root, 'enabled', enabled) == enabled:
+            return
         self.enabled = enabled
         self.root.enabled = enabled
 
@@ -537,14 +542,17 @@ class Minimap:
             self.scan_cooldown = max(0.0, self.scan_cooldown - time.dt)
 
         progress = self.scan_cooldown / max(0.001, SCAN_COOLDOWN_TIME)
-        if progress <= 0.0:
+        if progress <= 0.0 or not self.enabled:
             self.cooldown_rim.enabled = False
             self.rim.color = rgba(188, 166, 65, 95)
+            self._last_cooldown_progress = -1.0
             return
 
         self.cooldown_rim.enabled = True
         self.rim.color = rgba(188, 166, 65, 95)
-        self.update_cooldown_ring_mesh(progress)
+        if abs(progress - self._last_cooldown_progress) >= 0.004:
+            self.update_cooldown_ring_mesh(progress)
+            self._last_cooldown_progress = progress
 
     def update_cooldown_ring_mesh(self, progress):
         segments = COOLDOWN_RING_SEGMENTS
@@ -579,6 +587,10 @@ class Minimap:
 
     def update_scan_wave(self):
         self.update_scan_cooldown()
+
+        if not self.enabled:
+            self.scan_pulse.enabled = False
+            return
 
         if not self.scanning:
             self.scan_pulse.enabled = False
@@ -632,8 +644,11 @@ class Minimap:
 
         anchor_x, anchor_z = self.map_anchor
         x, y = self.world_to_local(anchor_x - self.player.x, anchor_z - self.player.z)
-        self.map_layer.position = (x, y, 0.05)
-        self.map_layer.set_shader_input('map_offset', Vec2(x, y))
+        last_x, last_y = self._last_map_offset if self._last_map_offset is not None else (None, None)
+        if last_x is None or abs(x - last_x) > 1e-5 or abs(y - last_y) > 1e-5:
+            self.map_layer.position = (x, y, 0.05)
+            self.map_layer.set_shader_input('map_offset', Vec2(x, y))
+            self._last_map_offset = (x, y)
 
     def rebuild_map_mesh(self):
         rr = self.ui_radius()

@@ -1,11 +1,12 @@
 import random
 
 from direct.showbase import ShowBaseGlobal
-from panda3d.core import CardMaker, Filename, NodePath, PNMImage, Point3, Texture, TransparencyAttrib
-from ursina import Entity, Vec3, camera, color, time
+from panda3d.core import CardMaker, Filename, NodePath, PNMImage, Point3, SamplerState, Texture as PandaTexture, TransparencyAttrib
+from ursina import Entity, Mesh, Vec3, camera, color, time
 
 from map.map_data import CELL, PROJECT_DIR
 from utill.audio import play_transient_sound
+from utill.textures import load_image_texture
 
 
 DRAWER_MODEL_PATH = PROJECT_DIR / 'asset' / 'model' / 'drawer.glb'
@@ -87,20 +88,11 @@ class DrawerMixin:
             self._moving_drawer_keys.add(key)
 
     def nearby_active_drawers(self, max_distance=DRAWER_INTERACT_CULL_DISTANCE):
-        max_dist_sq = max_distance * max_distance
-
-        for key, drawer in self.active_drawers.items():
-            entity = drawer['entity']
-
-            if not entity.enabled:
-                continue
-
-            x, _, z = drawer['position']
-            dx = x - self.player.x
-            dz = z - self.player.z
-
-            if dx * dx + dz * dz <= max_dist_sq:
-                yield key, drawer
+        yield from self.active_items_near(
+            self.active_drawers,
+            self.active_drawers_by_cell,
+            max_distance,
+        )
 
     def init_drawer_assets(self):
         self.drawer_model = self.load_drawer_model()
@@ -112,7 +104,9 @@ class DrawerMixin:
         self.note_placement_lookup = {}
         self.note_textures = {}
         self.has_key = False
+        self.key_taken = False
         self.held_key_entity = None
+        self.held_key_texture = load_image_texture(PROJECT_DIR / HELD_KEY_TEXTURE)
         self.collected_notes = set()
         self.held_note_entities = {}
         self.held_note_placeholders = []
@@ -194,8 +188,10 @@ class DrawerMixin:
 
             rng = random.Random(f'note_texture:{placement["key"]}:{number}')
             self.multiply_blood_onto_note(note_image, blood_image, placement['blood_count'], rng)
-            texture = Texture(f'note_{placement["room_cell"]}_{placement["drawer_name"]}_{number}')
+            texture = PandaTexture(f'note_{placement["room_cell"]}_{placement["drawer_name"]}_{number}')
             texture.load(note_image)
+            texture.setMinfilter(SamplerState.FT_linear_mipmap_linear)
+            texture.setMagfilter(SamplerState.FT_linear)
             textures[placement['key']] = texture
 
         return textures
@@ -457,6 +453,7 @@ class DrawerMixin:
                 'face': face,
                 'position': position,
             }
+            self.index_active_object(self.active_drawers_by_cell, key, position)
 
     def add_start_room_wall_note(self, entities, cx, cz, face, west_x, north_z, east_x, south_z, near_lights):
         if (round(cz / CELL), round(cx / CELL)) != self.start_room_cell:
@@ -522,6 +519,8 @@ class DrawerMixin:
         glow_node.setTransparency(TransparencyAttrib.MAlpha)
         glow_node.setDepthWrite(False)
         glow_node.hide()
+        if self.key_taken or self.has_key:
+            key_node.hide()
 
         return {
             'node': key_node,
@@ -565,6 +564,9 @@ class DrawerMixin:
         note_node.setPos(local_pos)
         note_node.setHpr(0, 0, NOTE_ROTATIONS[index] + rotation_jitter)
         note_node.setColorScale(tint.r, tint.g, tint.b, 1.0)
+        drawer_key = ('drawer', room_cell[0], room_cell[1], drawer_name)
+        if drawer_key in self.collected_notes:
+            note_node.hide()
 
         return {
             'node': note_node,
@@ -770,6 +772,7 @@ class DrawerMixin:
             return False
 
         self.has_key = True
+        self.key_taken = True
         key_data['node'].hide()
         key_data['glow'].hide()
         self._active_key_glow_key = None
@@ -834,9 +837,14 @@ class DrawerMixin:
 
     def reset_key_pickup(self):
         self.has_key = False
+        self.key_taken = False
 
         if self.held_key_entity:
             self.held_key_entity.enabled = False
+
+        for key in list(self.drawer_states):
+            if key[1] == self.start_room_cell[0] and key[2] == self.start_room_cell[1]:
+                self.drawer_states[key] = False
 
         for key, drawer in self.active_drawers.items():
             if key[1] == self.start_room_cell[0] and key[2] == self.start_room_cell[1]:
@@ -873,13 +881,17 @@ class DrawerMixin:
         self.held_key_entity = Entity(
             parent=camera.ui,
             model='quad',
-            texture=HELD_KEY_TEXTURE,
             position=HELD_KEY_POS,
             rotation=(0, 0, HELD_KEY_ROT_Z),
             scale=HELD_KEY_SCALE,
             color=color.white,
+            unlit=True,
         )
-        self.held_key_entity.always_on_top = True
+        self.held_key_entity.setTexture(self.held_key_texture, 1)
+        self.held_key_entity.setTransparency(TransparencyAttrib.MAlpha)
+        self.held_key_entity.setBin('fixed', 103)
+        self.held_key_entity.setDepthWrite(False)
+        self.held_key_entity.setDepthTest(False)
 
     def _note_ui_node(self, name, index, texture=None, color_rgba=None, bin_sort=101):
         ux = HELD_NOTE_START_POS[0] + HELD_NOTE_SPACING * index
@@ -891,13 +903,11 @@ class DrawerMixin:
             position=(ux, uy, uz),
             scale=HELD_NOTE_SCALE,
             color=color.rgba(*color_rgba) if color_rgba else color.white,
+            unlit=True,
         )
         if texture:
-            np.model.setTexture(texture, 1)
+            np.setTexture(texture, 1)
         np.setTransparency(TransparencyAttrib.MAlpha)
-        # Ursina camera.ui: x=가로, y=세로, z=렌더링순서
-        # Panda3D setPos:   x=가로, y=렌더링순서, z=세로
-        np.always_on_top = True
         np.setBin('fixed', bin_sort)
         np.setDepthWrite(False)
         np.setDepthTest(False)
@@ -906,9 +916,40 @@ class DrawerMixin:
     def ensure_note_placeholders(self):
         if self.held_note_placeholders:
             return
-        for i in range(NOTE_COUNT):
-            ph = self._note_ui_node(f'note_ph_{i}', i, color_rgba=(0.12, 0.12, 0.12, 0.5), bin_sort=100)
-            self.held_note_placeholders.append(ph)
+
+        vertices = []
+        triangles = []
+        colors = []
+        slot_color = color.rgba(255, 255, 255, 150)
+        sx, sy = HELD_NOTE_SCALE
+
+        for index in range(NOTE_COUNT):
+            ux = HELD_NOTE_START_POS[0] + HELD_NOTE_SPACING * index
+            uy = HELD_NOTE_START_POS[1]
+            uz = HELD_NOTE_START_POS[2]
+            start = len(vertices)
+            hx = sx * 0.5
+            hy = sy * 0.5
+            vertices.extend((
+                (ux - hx, uy - hy, uz),
+                (ux + hx, uy - hy, uz),
+                (ux + hx, uy + hy, uz),
+                (ux - hx, uy + hy, uz),
+            ))
+            triangles.extend(((start, start + 1, start + 2), (start, start + 2, start + 3)))
+            colors.extend((slot_color, slot_color, slot_color, slot_color))
+
+        placeholder = Entity(
+            parent=camera.ui,
+            model=Mesh(vertices=vertices, triangles=triangles, colors=colors, mode='triangle', static=True),
+            color=color.rgba(0, 0, 0, 120),
+            unlit=True,
+        )
+        placeholder.setTransparency(TransparencyAttrib.MAlpha)
+        placeholder.setBin('fixed', 100)
+        placeholder.setDepthWrite(False)
+        placeholder.setDepthTest(False)
+        self.held_note_placeholders.append(placeholder)
 
     def show_held_note(self, key, note_data):
         if key in self.held_note_entities:
@@ -919,6 +960,12 @@ class DrawerMixin:
         index = len(self.held_note_entities)
         np = self._note_ui_node(f'held_note_{index}', index, texture=note_data['texture'], bin_sort=101)
         self.held_note_entities[key] = np
+
+    def set_held_notes_visible(self, visible):
+        for placeholder in self.held_note_placeholders:
+            placeholder.enabled = visible
+        for note in self.held_note_entities.values():
+            note.enabled = visible
 
     def nearest_drawer_ray_hit(self, origin, ray):
         nearest_kind = None

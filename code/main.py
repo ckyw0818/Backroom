@@ -1,5 +1,7 @@
 import math
+import os
 import random
+import time as _t
 
 from ursina import *
 try:
@@ -10,7 +12,7 @@ except ImportError:
 from pathlib import Path
 
 from direct.showbase import ShowBaseGlobal
-from panda3d.core import AmbientLight as Panda3dAmbientLight, Point2
+from panda3d.core import AmbientLight as Panda3dAmbientLight, Point2, PStatCollector, loadPrcFileData
 
 from character.monster import MonsterAI, NOISE_ATTRACT_RADIUS_CELLS
 from character.player_controller import CAMERA_FOV, RUN_SPEED, HeadBob, create_player
@@ -25,14 +27,14 @@ from utill.post_effects import PostEffects
 from utill.textures import DARK_COLOR, load_environment_textures
 
 
-HEARTBEAT_IDLE_VOLUME = 0.3
+HEARTBEAT_IDLE_VOLUME = 0.5
 HEARTBEAT_IDLE_RATE = 0.72
-HEARTBEAT_CHASE_MIN_VOLUME = 0.4
+HEARTBEAT_CHASE_MIN_VOLUME = 0.5
 HEARTBEAT_CHASE_MAX_VOLUME = 2.4
 HEARTBEAT_CHASE_MIN_RATE = 0.9
 HEARTBEAT_CHASE_MAX_RATE = 2.3
 HEARTBEAT_MIN_DISTANCE = 2.0
-HEARTBEAT_MAX_DISTANCE = 16.0
+HEARTBEAT_MAX_DISTANCE = 1000
 HEARTBEAT_SMOOTHING = 4.5
 CROSSHAIR_SIZE = 0.010
 CROSSHAIR_DOOR_SIZE = 0.017
@@ -68,6 +70,8 @@ MONSTER_FINAL_NOTE_SPEED_MULTIPLIER = 1.25
 ZOOM_KEYS = ('control', 'left control', 'right control')
 ZOOM_TIME = 0.5
 ZOOM_FOV = CAMERA_FOV * 0.5
+POST_EFFECT_STRENGTH_MIN = 0.0
+POST_EFFECT_STRENGTH_MAX = 1.5
 
 
 def rgba(r, g, b, a):
@@ -349,14 +353,31 @@ def jumpscare_volume_for(monster):
 
 
 def set_death_overlay_alpha(alpha):
+    global death_overlay_alpha
+
+    if death_overlay is None:
+        return
+
     alpha = max(0.0, min(1.0, alpha))
-    death_overlay.enabled = alpha > 0.0
-    death_overlay.color = rgba(0, 0, 0, int(255 * alpha))
+    enabled = alpha > 0.0
+    alpha_byte = int(255 * alpha)
+    state = (enabled, alpha_byte)
+    if death_overlay_alpha == state:
+        return
+
+    death_overlay_alpha = state
+    death_overlay.enabled = enabled
+    death_overlay.color = rgba(0, 0, 0, alpha_byte)
 
 
 def set_death_screen_visible(visible):
     if death_screen:
         death_screen.set_visible(visible)
+
+
+def set_held_notes_visible(visible):
+    if map_renderer and hasattr(map_renderer, 'set_held_notes_visible'):
+        map_renderer.set_held_notes_visible(visible)
 
 
 def reset_player_to_start():
@@ -453,7 +474,7 @@ def fade_monster_sounds(amount):
 
     jumpscare_sound.volume = JUMPSCARE_MAX_VOLUME * volume
 
-    for monster in active_monsters():
+    for monster in monsters:
         monster.set_sound_volume_scale(volume)
         if volume <= 0.0:
             monster.silence_all_sounds()
@@ -492,6 +513,12 @@ def update_death_sequence():
         if player_hearts <= 0 and black_elapsed >= DEATH_HEART_ANIM_TIME + DEATH_GAME_OVER_DELAY:
             death_state = 'game_over'
             death_timer = 0.0
+            set_held_notes_visible(False)
+            player.enabled = False
+            player.cursor.visible = False
+            crosshair.set_visible(False)
+            minimap.set_enabled(False)
+            set_system_cursor_visible(True)
             return True
 
         if death_timer <= 0.0:
@@ -626,8 +653,13 @@ class DoorCrosshair:
             position=(0, 0, -0.71),
             scale=CROSSHAIR_SIZE * 0.52,
         )
+        self._visible = True
+        self._door_ready = None
 
     def set_visible(self, visible):
+        if self._visible == visible:
+            return
+        self._visible = visible
         self.outer.enabled = visible
         self.inner.enabled = visible
 
@@ -642,29 +674,53 @@ class DoorCrosshair:
         scale = self.outer.scale_x + (target - self.outer.scale_x) * k
         self.outer.scale = scale
         self.inner.scale = scale * 0.52
-        self.outer.color = rgba(255, 236, 165, 175 if door_ready else 115)
+        if self._door_ready != door_ready:
+            self._door_ready = door_ready
+            self.outer.color = rgba(255, 236, 165, 175 if door_ready else 115)
 
 
 class DeathScreen:
-    HEART_TEXT = '♥'
-    HEART_FULL = (215, 24, 48, 255)
-    HEART_LOST = (38, 38, 38, 255)
+    HEART_TEXTURE = 'asset/texture/heart.png'
+    HEART_LOST_TEXTURE = 'asset/texture/heart_gray.png'
+    HEART_TINT = (255, 255, 255)
+    HEART_SCALE = 0.13
 
-    def __init__(self):
+    def __init__(self, restart_callback=None, main_menu_callback=None):
+        self.restart_callback = restart_callback
+        self.main_menu_callback = main_menu_callback
         self.root = Entity(parent=camera.ui, enabled=False)
         self.hearts = []
+        self.game_over_buttons = []
 
         for index, x in enumerate((-0.18, 0.0, 0.18)):
-            heart = Text(
+            heart_root = Entity(
                 parent=self.root,
-                text=self.HEART_TEXT,
                 origin=(0, 0),
                 position=(x, 0.03, -1.2),
-                scale=4.2,
-                color=rgba(*self.HEART_FULL),
+                scale=self.HEART_SCALE,
             )
-            heart.always_on_top = True
-            self.hearts.append(heart)
+            heart_full = Entity(
+                parent=heart_root,
+                model='quad',
+                texture=self.HEART_TEXTURE,
+                origin=(0, 0),
+                color=rgba(*self.HEART_TINT, 255),
+            )
+            heart_lost = Entity(
+                parent=heart_root,
+                model='quad',
+                texture=self.HEART_LOST_TEXTURE,
+                origin=(0, 0),
+                position=(0, 0, -0.001),
+                color=rgba(*self.HEART_TINT, 0),
+            )
+            heart_full.always_on_top = True
+            heart_lost.always_on_top = True
+            self.hearts.append({
+                'root': heart_root,
+                'full': heart_full,
+                'lost': heart_lost,
+            })
 
         self.game_over = Text(
             parent=self.root,
@@ -676,9 +732,50 @@ class DeathScreen:
             enabled=False,
         )
         self.game_over.always_on_top = True
+        self.game_over.setBin('fixed', 140)
+        self.game_over.setDepthWrite(False)
+        self.game_over.setDepthTest(False)
+
+        self.restart_button = self.add_game_over_button('Restart Game', -0.300, self.restart_callback)
+        self.main_menu_button = self.add_game_over_button('Main Menu', -0.405, self.main_menu_callback)
 
     def set_visible(self, visible):
         self.root.enabled = visible
+
+    def add_game_over_button(self, text, y, callback):
+        button = Button(
+            parent=self.root,
+            text='',
+            position=(0, y, -1.2),
+            scale=(0.42, 0.082),
+            color=rgba(0, 0, 0, 0),
+            highlight_color=rgba(0, 0, 0, 0),
+            pressed_color=rgba(0, 0, 0, 0),
+            on_click=callback,
+            enabled=False,
+        )
+        button.collider = 'box'
+        button.always_on_top = True
+        button.setBin('fixed', 140)
+        button.setDepthWrite(False)
+        button.setDepthTest(False)
+
+        label = Text(
+            parent=self.root,
+            text=f'[ {text} ]',
+            origin=(0, 0),
+            position=(0, y + 0.002, -1.3),
+            scale=1.08,
+            color=rgba(235, 231, 205, 0),
+            enabled=False,
+        )
+        label.always_on_top = True
+        label.setBin('fixed', 141)
+        label.setDepthWrite(False)
+        label.setDepthTest(False)
+
+        self.game_over_buttons.append((button, label))
+        return button, label
 
     def update(
         self,
@@ -692,22 +789,44 @@ class DeathScreen:
 
         for index, heart in enumerate(self.hearts):
             lost = index < MAX_PLAYER_HEARTS - lives
-            heart.scale = 4.2
+            heart['root'].scale = self.HEART_SCALE
+            full_alpha = 255
+            lost_alpha = 0
 
             if lost_index == index:
-                heart.color = lerp_color(self.HEART_FULL, self.HEART_LOST, anim_progress)
+                amount = smoothstep01(anim_progress)
+                full_alpha = int(255 * (1.0 - amount))
+                lost_alpha = int(255 * amount)
                 pulse = 1.0 + 0.18 * math.sin(min(1.0, anim_progress) * math.pi)
-                heart.scale = 4.2 * pulse
+                heart['root'].scale = self.HEART_SCALE * pulse
             elif lost:
-                heart.color = rgba(*self.HEART_LOST)
-            else:
-                heart.color = rgba(*self.HEART_FULL)
+                full_alpha = 0
+                lost_alpha = 255
+
+            heart['full'].color = rgba(*self.HEART_TINT, full_alpha)
+            heart['lost'].color = rgba(*self.HEART_TINT, lost_alpha)
 
         self.game_over.enabled = show_game_over
         if show_game_over:
             fade = min(1.0, max(0.0, game_over_progress))
             self.game_over.color = rgba(230, 230, 230, int(255 * fade))
+            for button, label in self.game_over_buttons:
+                button.enabled = fade >= 0.85
+                label.enabled = True
+                alpha = int(255 * fade)
+                label.color = rgba(246, 214, 122, alpha) if button.hovered else rgba(235, 231, 205, alpha)
+        else:
+            for button, label in self.game_over_buttons:
+                button.enabled = False
+                label.enabled = False
 
+
+if os.environ.get('BACKROOM_PSTATS') == '1':
+    loadPrcFileData('', '''
+want-pstats true
+pstats-tasks true
+pstats-gpu-timing true
+''')
 
 app = Ursina(title='The Backrooms', size=(1280, 720))
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -739,9 +858,11 @@ head_bob = None
 map_renderer = None
 monsters = []
 post_effects = None
+post_effect_strength = 1.0
 minimap = None
 crosshair = None
 death_overlay = None
+death_overlay_alpha = None
 death_screen = None
 death_state = 'alive'
 death_timer = 0.0
@@ -775,6 +896,10 @@ heartbeat_rate = HEARTBEAT_IDLE_RATE
 minimap_scan_was_down = False
 minimap_tab_was_down = False
 minimap_visible = False
+minimap_debug_disabled = False
+held_hud_debug_disabled = False
+light_fixtures_debug_disabled = False
+exit_background_visible = False
 
 
 def set_system_cursor_visible(visible):
@@ -852,7 +977,7 @@ def update_game_start_fadein():
 def initialize_game():
     global textures, light_system, START_ROOM_CELL_RUNTIME, player, footstep_sounds
     global head_bob, map_renderer, monsters, post_effects, minimap, crosshair
-    global death_overlay, death_screen, game_clear_sequence, guide_text
+    global death_overlay, death_overlay_alpha, death_screen, game_clear_sequence, guide_text
     global vent_ambience, sonar_sound, heartbeat_sound, jumpscare_sound
     global death_state, death_timer, player_hearts, death_lost_heart_index
     global jumpscare_timer, jumpscare_monster, jumpscare_look_timer, heartbeat_rate
@@ -891,7 +1016,7 @@ def initialize_game():
     for monster in monsters:
         monster.set_door_system(map_renderer, MONSTER_SPAWN_MIN_DISTANCE)
     update_monster_pressure()
-    post_effects = PostEffects()
+    post_effects = PostEffects(effect_strength=post_effect_strength)
 
     minimap = Minimap(
         LAYOUT,
@@ -911,7 +1036,8 @@ def initialize_game():
         enabled=False,
     )
     death_overlay.always_on_top = True
-    death_screen = DeathScreen()
+    death_overlay_alpha = None
+    death_screen = DeathScreen(restart_game_from_game_over, return_to_main_menu_from_game_over)
     death_state = 'alive'
     death_timer = 0.0
     player_hearts = MAX_PLAYER_HEARTS
@@ -1033,7 +1159,9 @@ def resume_game():
     minimap.set_enabled(minimap_visible)
 
 
-def update_exit_background():
+def update_exit_background(force=False):
+    global exit_background_visible
+
     player_cell = map_renderer.player_cell()
     in_exit = player_cell == map_renderer.exit_room_cell
     sees_open_exit = False
@@ -1051,6 +1179,10 @@ def update_exit_background():
         )
 
     show_exit_background = in_exit or sees_open_exit
+    if not force and show_exit_background == exit_background_visible:
+        return show_exit_background
+
+    exit_background_visible = show_exit_background
     background = EXIT_BACKGROUND if show_exit_background else DARK_COLOR
     camera.background_color = background
     scene.fog_color = background
@@ -1058,33 +1190,224 @@ def update_exit_background():
     return show_exit_background
 
 
-main_menu = MainMenu(start_game)
-pause_menu = PauseMenu(resume_game, application.quit)
+def get_post_effect_strength():
+    return post_effect_strength
+
+
+def set_post_effect_strength(value):
+    global post_effect_strength
+
+    post_effect_strength = max(POST_EFFECT_STRENGTH_MIN, min(POST_EFFECT_STRENGTH_MAX, value))
+    post_effect_strength = round(post_effect_strength, 2)
+
+    if post_effects:
+        post_effects.set_effect_strength(post_effect_strength)
+        post_effects.set_inputs()
+
+
+def stop_audio_persistent(sound):
+    if not sound:
+        return
+
+    try:
+        sound.stop(destroy=False)
+    except TypeError:
+        sound.stop()
+
+
+def reset_game_clear_sequence():
+    if not game_clear_sequence:
+        return
+
+    game_clear_sequence.state = 'inactive'
+    game_clear_sequence.timer = 0.0
+    game_clear_sequence.ending_credit_started = False
+    game_clear_sequence.walk_start = None
+    game_clear_sequence.walk_end = None
+    game_clear_sequence.credits.set_visible(False)
+    game_clear_sequence.ending_credit_music.volume = 0.0
+    stop_audio_persistent(game_clear_sequence.ending_credit_music)
+
+
+def reset_map_progress():
+    if not map_renderer:
+        return
+
+    map_renderer.door_states.clear()
+    map_renderer.door_lock_states.clear()
+    map_renderer.drawer_states.clear()
+    map_renderer.collected_notes.clear()
+    map_renderer.has_key = False
+    map_renderer.key_taken = False
+    map_renderer._moving_door_keys.clear()
+    map_renderer._moving_drawer_keys.clear()
+    map_renderer._active_key_glow_key = None
+
+    if map_renderer.held_key_entity:
+        map_renderer.held_key_entity.enabled = False
+    for note in map_renderer.held_note_entities.values():
+        note.enabled = False
+    for placeholder in map_renderer.held_note_placeholders:
+        placeholder.enabled = False
+    map_renderer.held_note_entities.clear()
+
+    for door in map_renderer.active_doors.values():
+        door['open'] = 0.0
+
+    for drawer_key, drawer in map_renderer.active_drawers.items():
+        drawer['open'] = 0.0
+        key_data = drawer.get('key')
+        if key_data:
+            key_data['node'].show()
+            key_data['glow'].hide()
+        note_data = drawer.get('note')
+        if note_data:
+            note_data['node'].show()
+
+    for keypad in map_renderer.active_keypads.values():
+        keypad['input'] = ''
+        keypad['message_timer'] = 0.0
+        keypad['pending_result_sound'] = None
+        keypad['pending_unlock'] = False
+        map_renderer.set_keypad_display_text(keypad, '')
+
+    map_renderer.reset_start_room_lock_and_key()
+    map_renderer._raycast_cache_key = None
+    map_renderer.update_rendered_scene(force=True)
+    map_renderer.process_queues()
+
+
+def reset_game_run():
+    global death_state, death_timer, player_hearts, death_lost_heart_index
+    global minimap_visible, heartbeat_rate, jumpscare_timer, jumpscare_monster, jumpscare_look_timer
+
+    reset_game_clear_sequence()
+    reset_map_progress()
+    player_hearts = MAX_PLAYER_HEARTS
+    death_lost_heart_index = None
+    death_state = 'alive'
+    death_timer = 0.0
+    jumpscare_timer = 0.0
+    jumpscare_monster = None
+    jumpscare_look_timer = 0.0
+    jumpscare_sound.stop()
+    reset_run_after_death()
+    player_hearts = MAX_PLAYER_HEARTS
+    death_lost_heart_index = None
+    death_state = 'alive'
+    death_timer = 0.0
+    heartbeat_rate = HEARTBEAT_IDLE_RATE
+    heartbeat_sound.volume = 0.0
+    set_audio_rate(heartbeat_sound, heartbeat_rate)
+    fade_monster_sounds(0.0)
+    set_death_screen_visible(False)
+    minimap_visible = False
+    minimap.set_enabled(False)
+
+
+def restart_game_from_game_over():
+    global game_state
+
+    reset_game_run()
+    game_state = 'playing'
+    pause_menu.set_visible(False)
+    main_menu.set_visible(False)
+    player.enabled = True
+    player.speed = RUN_SPEED
+    player.mouse_sensitivity = Vec2(35, 35)
+    player.cursor.visible = False
+    set_system_cursor_visible(False)
+    start_game_fadein()
+
+
+def return_to_main_menu_from_game_over():
+    global game_state
+
+    reset_game_run()
+    game_state = 'menu'
+    pause_menu.set_visible(False)
+    main_menu.set_visible(True)
+    suspend_gameplay_for_menu()
+    set_death_overlay_alpha(0.0)
+    start_menu_music()
+
+
+main_menu = MainMenu(start_game, get_post_effect_strength, set_post_effect_strength)
+pause_menu = PauseMenu(resume_game, application.quit, get_post_effect_strength, set_post_effect_strength)
 suspend_gameplay_for_menu()
 start_menu_music()
 
 
 _prof_t = 0.0
+_prof_frames = 0
+_sect = {}
+_pstat_collectors = {}
+
+
+def _pstat_collector(name):
+    collector = _pstat_collectors.get(name)
+    if collector is None:
+        collector = PStatCollector(f'App:Backroom:{name}')
+        _pstat_collectors[name] = collector
+    return collector
+
+
+def _tm(name, fn, *a, **k):
+    collector = _pstat_collector(name)
+    start = _t.perf_counter()
+    collector.start()
+    try:
+        return fn(*a, **k)
+    finally:
+        collector.stop()
+        _sect[name] = _sect.get(name, 0.0) + (_t.perf_counter() - start)
+
+
+import gc
 
 def dbg():
-    mr = map_renderer
+    from ursina import scene
+    f = max(1, _prof_frames)
+    dt_ms = (_sect.pop('frame_dt', 0.0) / f) * 1000
+    update_ms = (_sect.get('update_py', 0.0) / f) * 1000
+    engine_gap = max(0.0, dt_ms - update_ms)
+    top = sorted(_sect.items(), key=lambda x: -x[1])[:8]
+    ms = ', '.join(f'{n}={v/f*1000:.2f}' for n, v in top)
+    drawn = sum(1 for e in scene.entities
+                if getattr(e, 'enabled', False) and getattr(e, 'model', None) is not None)
+    active_count = len(active_monsters()) if monsters else 0
+    if map_renderer:
+        cache_count = len(getattr(map_renderer, '_visibility_cache', ()))
+        vis = (
+            len(map_renderer.prebuilt_static_chunks),
+            len(map_renderer._visible_cells),
+            len(map_renderer._visible_rooms),
+            len(map_renderer.prebuilt_light_chunks),
+        )
+    else:
+        cache_count = 0
+        vis = (0, 0, 0, 0)
+    pyobj = len(gc.get_objects())          # Python 힙 누수 감지 (설치 불필요)
+    try:
+        import psutil, os
+        ram = psutil.Process(os.getpid()).memory_info().rss / 1e6
+    except Exception:
+        ram = -1.0
     print(
-        'ent', len(scene.entities),
-        'vc', len(mr._visible_cells),
-        'vr', len(mr._visible_rooms),
-        'vl', len(mr._visible_lights),
-        'vs', len(mr._visible_static_chunks),
-        'cc', len(mr._collision_cells),
-        'cr', len(mr._collision_rooms),
-        'hq', len(mr._hide_cell_queue), len(mr._hide_room_queue), len(mr._hide_light_queue),
-        'cache', len(mr._visibility_cache),
-        'doors', len(mr.active_doors),
-        'drawers', len(mr.active_drawers),
+        f'fps={_prof_frames} dt={dt_ms:.1f}ms engine~={engine_gap:.1f}ms | {ms} | '
+        f'drawn={drawn} monsters={active_count}/{len(monsters)} cache={cache_count} '
+        f'static/cells/rooms/lights={vis[0]}/{vis[1]}/{vis[2]}/{vis[3]} '
+        f'post={post_effects is not None} mini_off={minimap_debug_disabled} '
+        f'held_off={held_hud_debug_disabled} lights_off={light_fixtures_debug_disabled} '
+        f'pyobj={pyobj} ram={ram:.0f}MB'
     )
+    _sect.clear()
 
 def update():
     global heartbeat_rate, minimap_scan_was_down, minimap_tab_was_down, minimap_visible
 
+    frame_start = _t.perf_counter()
+    _sect['frame_dt'] = _sect.get('frame_dt', 0.0) + time.dt
     update_menu_music_fade()
 
     if game_state == 'paused':
@@ -1109,23 +1432,32 @@ def update():
             application.quit()
         return
 
-    map_renderer.update_rendered_scene()
-    map_renderer.process_queues()
-    map_renderer.update_doors()
-    map_renderer.update_drawers()
-    map_renderer.resolve_player_collision()
-    update_exit_background()
-    if game_clear_sequence.check_trigger(death_state == 'alive'):
-        game_clear_sequence.update()
+    _tm('scene', map_renderer.update_rendered_scene)
+    _tm('queues', map_renderer.process_queues)
+    _tm('doors', map_renderer.update_doors)
+    _tm('drawers', map_renderer.update_drawers)
+    _tm('head', head_bob.update)
+    _tm('coll', map_renderer.resolve_player_collision)
+    _tm('exitbg', update_exit_background)
+    if _tm('clear_check', game_clear_sequence.check_trigger, death_state == 'alive'):
+        _tm('clear', game_clear_sequence.update)
         return
 
-    update_monster_pressure()
+    _tm('pressure', update_monster_pressure)
 
-    for monster in active_monsters():
-        monster.update()
+    active = active_monsters()
+    monster_start = _t.perf_counter()
+    monster_collector = _pstat_collector('monsters')
+    monster_collector.start()
+    try:
+        for monster in active:
+            monster.update()
+    finally:
+        monster_collector.stop()
+        _sect['monsters'] = _sect.get('monsters', 0.0) + (_t.perf_counter() - monster_start)
 
-    update_jumpscares()
-    update_player_caught()
+    _tm('jumps', update_jumpscares)
+    _tm('caught', update_player_caught)
     if death_state != 'alive':
         update_camera_zoom(False)
         return
@@ -1141,12 +1473,18 @@ def update():
     minimap_tab_down = held_keys['tab']
     if minimap_tab_down and not minimap_tab_was_down:
         minimap_visible = not minimap_visible
-        minimap.set_enabled(minimap_visible)
+        if not minimap_debug_disabled:
+            minimap.set_enabled(minimap_visible)
     minimap_tab_was_down = minimap_tab_down
 
-    minimap.update()
-    crosshair.update(map_renderer.can_interact(), minimap_visible)
-    active = active_monsters()
+    if minimap_debug_disabled:
+        minimap.set_enabled(False)
+    else:
+        _tm('mini', minimap.update)
+    if held_hud_debug_disabled:
+        set_held_hud_debug_visible(False)
+    interact_ready = _tm('interact', map_renderer.can_interact)
+    crosshair.update(interact_ready, minimap_visible)
     nearest_monster = min(active if active else monsters, key=lambda monster: monster.distance_to_player())
     target_heartbeat_volume, target_heartbeat_rate = heartbeat_targets(nearest_monster)
     heartbeat_lerp = min(1.0, time.dt * HEARTBEAT_SMOOTHING)
@@ -1168,16 +1506,18 @@ def update():
             post_effects.set_threat(close * 0.25)
         else:
             post_effects.set_threat(0.0)
-        post_effects.update()
-    head_bob.update()
-    update_jumpscare_look()
-    update_game_start_fadein()
-    update_camera_zoom()
-    global _prof_t
+        _tm('post', post_effects.update)
+    _tm('look', update_jumpscare_look)
+    _tm('startfade', update_game_start_fadein)
+    _tm('zoom', update_camera_zoom)
+    _sect['update_py'] = _sect.get('update_py', 0.0) + (_t.perf_counter() - frame_start)
+    global _prof_t, _prof_frames
     _prof_t += time.dt
+    _prof_frames += 1
     if _prof_t >= 1:
-        _prof_t = 0
         dbg()
+        _prof_t = 0
+        _prof_frames = 0
 
 
 def teleport_to_exit_door_debug():
@@ -1200,6 +1540,141 @@ def teleport_to_exit_door_debug():
     return True
 
 
+def teleport_to_monster_front_debug():
+    active = active_monsters()
+    if not active:
+        print('debug: no active monster')
+        return False
+
+    monster = min(active, key=lambda item: item.distance_to_player())
+    yaw_rad = math.radians(float(monster.entity.rotation_y))
+    dir_x = math.sin(yaw_rad)
+    dir_z = math.cos(yaw_rad)
+
+    if abs(dir_x) + abs(dir_z) < 0.001:
+        dir_x, dir_z = 0.0, 1.0
+
+    distance = max(DEATH_DISTANCE * 2.5, 2.2)
+    player.position = (
+        monster.entity.x + dir_x * distance,
+        0,
+        monster.entity.z + dir_z * distance,
+    )
+    player.rotation_y = math.degrees(math.atan2(monster.entity.x - player.x, monster.entity.z - player.z))
+    player.speed = RUN_SPEED
+    monster.set_state('chase')
+    map_renderer._raycast_cache_key = None
+    map_renderer.update_rendered_scene(force=True)
+    print('debug: teleported player in front of monster')
+    return True
+
+
+def print_scene_analyze_debug():
+    print('--- render.analyze() ---')
+    render_root.analyze()
+    try:
+        geom_nodes = render_root.findAllMatches('**/+GeomNode').getNumPaths()
+    except Exception:
+        geom_nodes = -1
+    print(
+        'entities', len(scene.entities),
+        'drawn', sum(1 for e in scene.entities if getattr(e, 'enabled', False) and getattr(e, 'model', None) is not None),
+        'geom_nodes', geom_nodes,
+    )
+
+
+def disable_post_effects_debug():
+    global post_effects
+
+    if post_effects is None:
+        print('debug: post effects already off')
+        return
+
+    try:
+        post_effects.cleanup()
+    except Exception as exc:
+        print(f'debug: post cleanup failed: {exc}')
+    post_effects = None
+    print('debug: post effects OFF')
+
+
+def toggle_minimap_debug():
+    global minimap_debug_disabled
+
+    minimap_debug_disabled = not minimap_debug_disabled
+    if minimap:
+        minimap.set_enabled(False if minimap_debug_disabled else minimap_visible)
+    print(f'debug: minimap hard off = {minimap_debug_disabled}')
+
+
+def set_held_hud_debug_visible(visible):
+    if not map_renderer:
+        return
+    if hasattr(map_renderer, 'set_held_notes_visible'):
+        map_renderer.set_held_notes_visible(visible)
+    held_key = getattr(map_renderer, 'held_key_entity', None)
+    if held_key:
+        held_key.enabled = visible and getattr(map_renderer, 'has_key', False)
+
+
+def toggle_held_hud_debug():
+    global held_hud_debug_disabled
+
+    held_hud_debug_disabled = not held_hud_debug_disabled
+    set_held_hud_debug_visible(not held_hud_debug_disabled)
+    print(f'debug: held hud off = {held_hud_debug_disabled}')
+
+
+def toggle_light_fixtures_debug():
+    global light_fixtures_debug_disabled
+
+    light_fixtures_debug_disabled = not light_fixtures_debug_disabled
+    if map_renderer and hasattr(map_renderer, 'set_light_fixtures_debug_enabled'):
+        map_renderer.set_light_fixtures_debug_enabled(not light_fixtures_debug_disabled)
+    print(f'debug: light fixtures off = {light_fixtures_debug_disabled}')
+
+
+def print_engine_debug():
+    base = ShowBaseGlobal.base
+    print('--- engine debug ---')
+    try:
+        clock = ShowBaseGlobal.globalClock
+        print('clock fps', clock.getAverageFrameRate(), 'dt', clock.getDt())
+    except Exception as exc:
+        print('clock unavailable', exc)
+
+    try:
+        win = base.win
+        props = win.getProperties()
+        print('window', props.getXSize(), props.getYSize(), 'fullscreen', props.getFullscreen())
+        gsg = win.getGsg()
+        if gsg:
+            for label, method_name in (
+                ('vendor', 'getDriverVendor'),
+                ('renderer', 'getDriverRenderer'),
+                ('version', 'getDriverVersion'),
+            ):
+                method = getattr(gsg, method_name, None)
+                if method:
+                    print(label, method())
+    except Exception as exc:
+        print('window/gsg unavailable', exc)
+
+    try:
+        task_mgr = base.taskMgr
+        tasks = []
+        for method_name in ('getAllTasks', 'getTasks'):
+            method = getattr(task_mgr, method_name, None)
+            if method:
+                tasks = list(method())
+                break
+        print('tasks', len(tasks))
+        for task in tasks[:30]:
+            print(' task', getattr(task, 'name', task))
+    except Exception as exc:
+        print('tasks unavailable', exc)
+
+
 def input(key):
     if game_state == 'paused':
         pause_menu.handle_key(key)
@@ -1212,8 +1687,15 @@ def input(key):
     if game_clear_sequence.is_active():
         return
 
+    if death_state != 'alive':
+        return
+
     if key == 'escape':
         pause_game()
+        return
+
+    if key == '0':
+        teleport_to_monster_front_debug()
         return
 
     if key == '1':
@@ -1222,6 +1704,30 @@ def input(key):
 
     if key == '2':
         map_renderer.collect_all_notes_cheat()
+        return
+
+    if key == '3':
+        print_scene_analyze_debug()
+        return
+
+    if key == '4':
+        disable_post_effects_debug()
+        return
+
+    if key == '5':
+        toggle_minimap_debug()
+        return
+
+    if key == '6':
+        toggle_held_hud_debug()
+        return
+
+    if key == '7':
+        toggle_light_fixtures_debug()
+        return
+
+    if key == '8':
+        print_engine_debug()
         return
 
     if key == 'e':

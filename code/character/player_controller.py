@@ -1,8 +1,7 @@
 import math
 import random
 
-from ursina import Vec2, camera, held_keys, time
-from ursina.prefabs.first_person_controller import FirstPersonController
+from ursina import Entity, Vec2, camera, held_keys, mouse, time
 from utill.audio import play_transient_sound
 
 PLAYER_H = 1.15
@@ -11,21 +10,28 @@ WALK_SPEED = 3.0
 RUN_SPEED = 5.2
 MOVE_ACCEL = 5.5
 MOVE_DECEL = 8.0
+MOUSE_PITCH_LIMIT = 88.0
+
+
+class SimplePlayer(Entity):
+    def __init__(self, position, rotation_y=0, mouse_sensitivity=Vec2(35, 35)):
+        super().__init__(position=position, rotation_y=rotation_y)
+        self.speed = 0.0
+        self.mouse_sensitivity = mouse_sensitivity
+        self.camera_pivot = Entity(parent=self, y=PLAYER_H)
+        self.cursor = Entity(enabled=False)
+        self.collider = None
+        camera.parent = self.camera_pivot
+        camera.position = (0, 0, 0)
+        camera.rotation = (0, 0, 0)
 
 
 def create_player(cell_size, spawn_r=1, spawn_c=1, spawn_yaw=0):
-    player = FirstPersonController(
+    player = SimplePlayer(
         position=(spawn_c * cell_size, 0, spawn_r * cell_size),
         rotation_y=spawn_yaw,
-        speed=0,
         mouse_sensitivity=Vec2(35, 35),
     )
-    player.jump_height = 0
-    player.jump_duration = 0
-    player.gravity = 0
-    player.height = PLAYER_H
-    player.camera_pivot.y = PLAYER_H
-    player.collider = None
     player.cursor.visible = False
     return player
 
@@ -67,7 +73,35 @@ class HeadBob:
         if self.footstep_callback:
             self.footstep_callback()
 
+    def update_mouse_look(self):
+        sensitivity = getattr(self.player, 'mouse_sensitivity', Vec2(0, 0))
+        if not sensitivity:
+            return
+
+        self.player.rotation_y += mouse.velocity[0] * sensitivity[0]
+        self.player.camera_pivot.rotation_x = max(
+            -MOUSE_PITCH_LIMIT,
+            min(MOUSE_PITCH_LIMIT, self.player.camera_pivot.rotation_x - mouse.velocity[1] * sensitivity[1]),
+        )
+
+    def update_movement(self, dt):
+        forward = self.player.forward
+        right = self.player.right
+        move_x = float(held_keys['d']) - float(held_keys['a'])
+        move_z = float(held_keys['w']) - float(held_keys['s'])
+        length = max((move_x * move_x + move_z * move_z) ** 0.5, 0.001)
+
+        if move_x or move_z:
+            move_x /= length
+            move_z /= length
+            self.player.position += (
+                (right * move_x + forward * move_z)
+                * self.current_speed
+                * dt
+            )
+
     def update(self):
+        self.update_mouse_look()
         moving = held_keys['w'] or held_keys['a'] or held_keys['s'] or held_keys['d']
         running = moving and held_keys['shift']
         dt = time.dt
@@ -75,6 +109,7 @@ class HeadBob:
         accel = MOVE_ACCEL if target_speed > self.current_speed else MOVE_DECEL
         self.current_speed += (target_speed - self.current_speed) * min(1.0, dt * accel)
         self.player.speed = self.current_speed
+        self.update_movement(dt)
 
         self.run_blend += ((1.0 if running else 0.0) - self.run_blend) * min(1.0, dt * 7)
         move_blend = min(1.0, self.current_speed / WALK_SPEED)

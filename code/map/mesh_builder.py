@@ -23,6 +23,7 @@ class MeshBuilderMixin:
             'ceil': {'vertices': [], 'triangles': [], 'uvs': [], 'colors': [], 'texture': textures['ceil']},
             'wall': {'vertices': [], 'triangles': [], 'uvs': [], 'colors': [], 'texture': textures['wall']},
             'baseboard': {'vertices': [], 'triangles': [], 'uvs': [], 'colors': [], 'texture': textures['baseboard']},
+            'fixture': {'vertices': [], 'triangles': [], 'uvs': [], 'colors': [], 'texture': None},
         }
 
     def add_quad(self, mesh_data, kind, vertices, uvs, base_rgb, near_lights):
@@ -236,5 +237,6 @@ class MeshBuilderMixin:
             ),
             unlit=True,
         )
-        entity.model.setTexture(data['texture'], 1)
+        if data['texture'] is not None:
+            entity.model.setTexture(data['texture'], 1)
         return entity
