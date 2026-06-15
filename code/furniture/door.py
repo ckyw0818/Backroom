@@ -1047,6 +1047,8 @@ class DoorMixin(BedMixin, DrawerMixin):
 
     def update_keypads(self):
         for keypad in self.active_keypads.values():
+            if not getattr(keypad.get('entity'), 'enabled', True):
+                continue
             if keypad.get('pending_result_sound') and keypad.get('result_sound_timer', 0.0) > 0.0:
                 keypad['result_sound_timer'] = max(0.0, keypad['result_sound_timer'] - time.dt)
 

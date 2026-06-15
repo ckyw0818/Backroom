@@ -42,7 +42,7 @@ ROAR_SOUND_MAX_VOLUME = 1.00
 NOISE_DOOR_BREACH_REACH_DIST = DOOR_STALK_DOOR_REACH_DIST
 
 MONSTER_WANDER_SPEED = RUN_SPEED * 0.4
-MONSTER_INVESTIGATE_SPEED = RUN_SPEED * 0.4
+MONSTER_INVESTIGATE_SPEED = RUN_SPEED * 0.6
 MONSTER_DOOR_STALK_SPEED = RUN_SPEED * 0.75
 
 MONSTER_COLLISION_RADIUS = 0.48
@@ -368,6 +368,22 @@ class MonsterAI:
         if face == 'west':
             return monster_c >= door_c
         return monster_c <= door_c
+
+    def door_corridor_reachable(self, key, max_steps):
+        # The monster must be able to reach the door's corridor cell along an
+        # actual walkable path. A simple Manhattan-distance / half-plane test
+        # passes for a monster sitting in a *different* corridor on the far side
+        # of the room, letting it begin door_stalk and breach through the wall.
+        if key is None:
+            return False
+
+        door_cell = (key[0], key[1])
+        path = self.find_path(self.monster_cell(), door_cell)
+
+        if not path:
+            return self.monster_cell() == door_cell
+
+        return len(path) <= max_steps
 
     def reachable_player_cell(self):
         cell = self.player_cell()
@@ -861,11 +877,8 @@ class MonsterAI:
             and player_hidden
             and self.distance_to_player() <= DOOR_STALK_TRIGGER_DISTANCE
             and self.door_stalk_cooldown <= 0.0
-            and self.grid_distance(
-                self.monster_cell(),
-                (closed_room_key[0], closed_room_key[1]),
-            ) <= DOOR_STALK_CORRIDOR_MAX_DIST
             and self.on_door_corridor_side(closed_room_key)
+            and self.door_corridor_reachable(closed_room_key, DOOR_STALK_CORRIDOR_MAX_DIST)
         ):
             self.begin_door_stalk(closed_room_key, closed_room_door)
 

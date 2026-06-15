@@ -63,7 +63,7 @@ VENT_VOLUME = 0.60
 MENU_MUSIC_VOLUME = 0.72
 MENU_MUSIC_FADE_TIME = 2.0
 GAME_START_FADE_TIME = 1.6
-MONSTER_SPAWN_COUNT = 4
+MONSTER_SPAWN_COUNT = 3
 MONSTER_SPAWN_MIN_DISTANCE = 20
 MONSTER_SPAWN_MIN_SEPARATION = 8
 MONSTER_FINAL_NOTE_SPEED_MULTIPLIER = 1.25
@@ -1041,7 +1041,7 @@ def initialize_game():
             PROJECT_DIR,
             spawn_cell=spawn_cell,
             texture=texture,
-            chase_speed=RUN_SPEED * 5,
+            chase_speed=RUN_SPEED * 5.4,
         )
         for texture, spawn_cell in monster_specs
     ]
@@ -1379,6 +1379,7 @@ _prof_frames = 0
 _sect = {}
 _pstat_collectors = {}
 _pressure_frame = 0
+_state_probe_done = False
 
 
 def _pstat_collector(name):
@@ -1401,6 +1402,7 @@ def _tm(name, fn, *a, **k):
 
 
 import gc
+from panda3d.core import RenderState, TransformState
 
 def dbg():
     from ursina import scene
@@ -1438,6 +1440,24 @@ def dbg():
         f'held_off={held_hud_debug_disabled} lights_off={light_fixtures_debug_disabled} '
         f'pyobj={pyobj} ram={ram:.0f}MB'
     )
+    print('states r/t=', RenderState.getNumStates(), TransformState.getNumStates())
+    global _state_probe_done
+    if not _state_probe_done and RenderState.getNumStates() > 20000:
+        _state_probe_done = True
+        from collections import Counter
+        hist = Counter()
+        for st in RenderState.getStates():
+            if st is None:
+                continue
+            try:
+                names = [a.getType().getName() for a in st.attribs.values()]
+            except Exception:
+                names = [w for w in str(st).replace(':', ' ').split()
+                         if w.endswith('Attrib')]
+            hist[tuple(sorted(names))] += 1
+        print('=== RenderState attribute histogram (top 10) ===')
+        for attrs, count in hist.most_common(10):
+            print(f'  {count:6d}  {attrs}')
     _sect.clear()
 
 def update():

@@ -1,7 +1,7 @@
 import random
 from math import atan2, cos, degrees, pi, sin, sqrt
 
-from panda3d.core import PNMImage, Texture as PandaTexture
+from panda3d.core import PNMImage, PTAFloat, PTALVecBase2f, LVecBase2f, Texture as PandaTexture
 from ursina import Audio, Entity, Mesh, Shader, Texture, Vec2, camera, color, time
 
 
@@ -260,8 +260,15 @@ class Minimap:
             position=(0, 0, 0.05),
             shader=MINIMAP_MAP_SHADER,
         )
-        self.map_layer.set_shader_input('clip_radius', self.ui_radius())
-        self.map_layer.set_shader_input('map_offset', Vec2(0.0, 0.0))
+        # Bind shader inputs to persistent PTAs and mutate them in place.
+        # Calling set_shader_input every frame mints a new RenderState each time
+        # and leaks it into Panda's global state table (slow garbageCollectStates).
+        self._pta_clip_radius = PTAFloat.emptyArray(1)
+        self._pta_clip_radius[0] = self.ui_radius()
+        self._pta_map_offset = PTALVecBase2f.emptyArray(1)
+        self._pta_map_offset[0] = LVecBase2f(0.0, 0.0)
+        self.map_layer.set_shader_input('clip_radius', self._pta_clip_radius)
+        self.map_layer.set_shader_input('map_offset', self._pta_map_offset)
         self._last_map_offset = (0.0, 0.0)
 
         self.vignette = Entity(
@@ -664,7 +671,7 @@ class Minimap:
         last_x, last_y = self._last_map_offset if self._last_map_offset is not None else (None, None)
         if last_x is None or abs(x - last_x) > 1e-5 or abs(y - last_y) > 1e-5:
             self.map_layer.position = (x, y, 0.05)
-            self.map_layer.set_shader_input('map_offset', Vec2(x, y))
+            self._pta_map_offset[0] = LVecBase2f(x, y)
             self._last_map_offset = (x, y)
 
     def rebuild_map_mesh(self):

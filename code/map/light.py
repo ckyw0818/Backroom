@@ -52,6 +52,9 @@ class LightSystem:
         self._block_cache = {}
         self._light_cache = {}
         self._shade_cache = {}
+        self._BLOCK_CACHE_LIMIT = 8192
+        self._LIGHT_CACHE_LIMIT = 4096
+        self._SHADE_CACHE_LIMIT = 512
 
     def _build_cell_light_cache(self):
         cache = {}
@@ -119,6 +122,7 @@ class LightSystem:
         steps = max(2, int(dist / 0.32))
         inv = 1.0 / steps
         layout_at_world = self.layout_at_world
+        result = False
 
         for i in range(1, steps):
             t = i * inv
@@ -130,11 +134,15 @@ class LightSystem:
             pz = light_z + dz * t
 
             if layout_at_world(px, pz) == 1:
-                self._block_cache[k] = True
-                return True
+                result = True
+                break
 
-        self._block_cache[k] = False
-        return False
+        self._block_cache[k] = result
+        if len(self._block_cache) > self._BLOCK_CACHE_LIMIT:
+            keys = list(self._block_cache)
+            for old in keys[:len(keys) // 2]:
+                del self._block_cache[old]
+        return result
 
     def light_at(self, x, y, z, near_lights, surface='wall'):
         k = (
@@ -198,6 +206,10 @@ class LightSystem:
                 total += (falloff ** falloff_exp) * sample_power * surface_boost * ceiling_edge_soften
 
         self._light_cache[k] = total
+        if len(self._light_cache) > self._LIGHT_CACHE_LIMIT:
+            keys = list(self._light_cache)
+            for old in keys[:len(keys) // 2]:
+                del self._light_cache[old]
         return total
 
     def shaded_color(self, base, amount, minimum=0.055):
@@ -235,6 +247,10 @@ class LightSystem:
 
         col = color.Color(r, g, b, 1)
         self._shade_cache[k] = col
+        if len(self._shade_cache) > self._SHADE_CACHE_LIMIT:
+            keys = list(self._shade_cache)
+            for old in keys[:len(keys) // 2]:
+                del self._shade_cache[old]
         return col
 
     def add_fixture(self, r, c):

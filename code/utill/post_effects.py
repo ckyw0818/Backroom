@@ -2,7 +2,7 @@ import random
 
 from direct.filter.FilterManager import FilterManager
 from direct.showbase import ShowBaseGlobal
-from panda3d.core import Shader, Texture, ClockObject
+from panda3d.core import Shader, Texture, ClockObject, PTAFloat, PTALVecBase2f, LVecBase2f
 
 
 vshader = """
@@ -330,7 +330,8 @@ class PostEffects:
         self.frame = 0
         self.threat_level = 0.0
         self.threat_target = 0.0
-        self._si_cache = {}
+        self._pta_f = {}
+        self._pta_v2 = {}
 
         self.scene_tex = Texture()
         self.bright_tex = Texture()
@@ -383,16 +384,27 @@ class PostEffects:
         self.pix_e = self.rand_pix(self.pix_e_range)
 
     def _si_f(self, node, name, value):
-        prev = self._si_cache.get(name)
-        if prev != value:
-            self._si_cache[name] = value
-            node.setShaderInput(name, value)
+        # Bind a persistent PTAFloat once, then mutate it in place. Calling
+        # setShaderInput every frame would mint a new RenderState each time and
+        # leak it into Panda's global state table (slow garbageCollectStates).
+        pta = self._pta_f.get(name)
+        if pta is None:
+            pta = PTAFloat.emptyArray(1)
+            pta[0] = value
+            self._pta_f[name] = pta
+            node.setShaderInput(name, pta)
+        else:
+            pta[0] = value
 
     def _si_v2(self, node, name, value):
-        prev = self._si_cache.get(name)
-        if prev is None or abs(prev[0] - value[0]) > 1e-5 or abs(prev[1] - value[1]) > 1e-5:
-            self._si_cache[name] = value
-            node.setShaderInput(name, value)
+        pta = self._pta_v2.get(name)
+        if pta is None:
+            pta = PTALVecBase2f.emptyArray(1)
+            pta[0] = LVecBase2f(value[0], value[1])
+            self._pta_v2[name] = pta
+            node.setShaderInput(name, pta)
+        else:
+            pta[0] = LVecBase2f(value[0], value[1])
 
     def set_inputs(self):
         threat = max(0.0, min(1.0, self.threat_level))
@@ -480,7 +492,7 @@ class PostEffects:
         si(self.final_quad, 'effect_strength', self.effect_strength)
 
         tm = ClockObject.getGlobalClock().getFrameTime()
-        self.final_quad.setShaderInput('time', tm)
+        self._si_f(self.final_quad, 'time', tm)
 
     def update(self):
         self.frame += 1

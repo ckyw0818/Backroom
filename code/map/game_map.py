@@ -80,6 +80,7 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
         self._ray_offsets = self.build_ray_offsets()
         self._open_neighbors = self.build_open_neighbor_cache()
         self._cells_near_cache = {}
+        self._CELLS_NEAR_CACHE_LIMIT = 512
 
         self._hide_cell_queue = collections.deque()
         self._hide_room_queue = collections.deque()
@@ -326,6 +327,10 @@ class MapRenderer(DoorMixin, MeshBuilderMixin):
                     cells.add((r, c))
 
         self._cells_near_cache[cache_key] = frozenset(cells)
+        if len(self._cells_near_cache) > self._CELLS_NEAR_CACHE_LIMIT:
+            keys = list(self._cells_near_cache)
+            for old in keys[:len(keys) // 2]:
+                del self._cells_near_cache[old]
         return cells
 
     def collision_cells_near_player(self, center):
