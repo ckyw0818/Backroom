@@ -1,0 +1,367 @@
+fps=1 dt=10312.2ms engine~=10311.0ms | update_py=1.20, interact=0.57, mini=0.13, head=0.08, coll=0.06, scene=0.05, startfade=0.03, zoom=0.01 | drawn=101 monsters=0/3 cache=1 static/cells/rooms/lights=63/45/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=72478 ram=479MB
+states r/t= 1053 761
+fps=136 dt=7.4ms engine~=6.7ms | update_py=0.66, mini=0.14, scene=0.14, interact=0.10, head=0.08, coll=0.06, startfade=0.04, post=0.01 | drawn=141 monsters=0/3 cache=2 static/cells/rooms/lights=63/58/4/63 post=True mini_off=False held_off=False lights_off=False pyobj=74950 ram=465MB
+states r/t= 1167 737
+fps=143 dt=7.0ms engine~=6.1ms | update_py=0.87, interact=0.39, mini=0.13, scene=0.10, head=0.08, coll=0.05, startfade=0.02, post=0.01 | drawn=163 monsters=0/3 cache=11 static/cells/rooms/lights=63/75/4/63 post=True mini_off=False held_off=False lights_off=False pyobj=74995 ram=485MB
+states r/t= 1449 1114
+fps=145 dt=6.9ms engine~=5.8ms | update_py=1.14, interact=0.64, head=0.19, mini=0.13, coll=0.05, scene=0.04, post=0.01, zoom=0.01 | drawn=163 monsters=0/3 cache=17 static/cells/rooms/lights=63/64/4/63 post=True mini_off=False held_off=False lights_off=False pyobj=75092 ram=485MB
+states r/t= 1457 943
+fps=142 dt=7.1ms engine~=5.8ms | update_py=1.26, interact=0.69, head=0.21, mini=0.13, scene=0.05, coll=0.05, drawers=0.01, post=0.01 | drawn=124 monsters=0/3 cache=30 static/cells/rooms/lights=63/46/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=75266 ram=490MB
+states r/t= 1749 965
+fps=145 dt=6.9ms engine~=6.0ms | update_py=0.94, interact=0.53, mini=0.13, head=0.09, coll=0.05, scene=0.04, doors=0.01, post=0.01 | drawn=124 monsters=0/3 cache=33 static/cells/rooms/lights=63/47/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=75293 ram=490MB
+states r/t= 1750 939
+fps=145 dt=6.9ms engine~=6.3ms | update_py=0.68, interact=0.22, head=0.17, mini=0.13, coll=0.04, scene=0.03, doors=0.01, zoom=0.01 | drawn=122 monsters=0/3 cache=33 static/cells/rooms/lights=63/46/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=75317 ram=490MB
+states r/t= 1824 934
+fps=144 dt=7.0ms engine~=5.6ms | update_py=1.42, interact=0.59, mini=0.42, doors=0.13, head=0.09, coll=0.05, scene=0.04, post=0.01 | drawn=146 monsters=1/3 cache=41 static/cells/rooms/lights=63/61/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=76777 ram=487MB
+states r/t= 1872 865
+fps=144 dt=6.9ms engine~=5.7ms | update_py=1.27, interact=0.58, mini=0.34, head=0.09, scene=0.07, coll=0.07, monsters=0.03, doors=0.01 | drawn=112 monsters=1/3 cache=72 static/cells/rooms/lights=63/27/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=76031 ram=487MB
+states r/t= 1857 831
+fps=144 dt=7.0ms engine~=5.8ms | update_py=1.15, interact=0.45, mini=0.33, head=0.10, scene=0.08, coll=0.06, monsters=0.04, post=0.01 | drawn=124 monsters=1/3 cache=97 static/cells/rooms/lights=63/45/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=76120 ram=487MB
+states r/t= 1866 964
+fps=144 dt=6.9ms engine~=6.4ms | update_py=0.57, mini=0.18, interact=0.10, head=0.09, coll=0.05, monsters=0.04, scene=0.04, post=0.01 | drawn=125 monsters=1/3 cache=108 static/cells/rooms/lights=63/48/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=76236 ram=487MB
+states r/t= 1804 967
+:display:windisplay(warning): Could not find icon filename textures/ursina.ico
+:display:windisplay(warning): Could not find icon filename textures/ursina.ico
+fps=141 dt=40.9ms engine~=40.3ms | update_py=0.61, mini=0.15, head=0.10, interact=0.10, coll=0.05, monsters=0.05, scene=0.04, post=0.01 | drawn=125 monsters=1/3 cache=114 static/cells/rooms/lights=63/47/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=76341 ram=481MB
+states r/t= 1844 981
+fps=145 dt=6.9ms engine~=6.4ms | update_py=0.55, mini=0.15, interact=0.09, head=0.09, monsters=0.05, coll=0.05, scene=0.03, post=0.01 | drawn=123 monsters=1/3 cache=119 static/cells/rooms/lights=63/44/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=76429 ram=481MB
+states r/t= 1894 1004
+fps=145 dt=6.9ms engine~=6.3ms | update_py=0.62, mini=0.18, head=0.11, interact=0.09, coll=0.06, monsters=0.05, scene=0.04, post=0.01 | drawn=105 monsters=1/3 cache=128 static/cells/rooms/lights=63/35/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=75988 ram=481MB
+states r/t= 1843 969
+fps=145 dt=7.0ms engine~=6.4ms | update_py=0.53, mini=0.13, head=0.11, interact=0.10, monsters=0.04, scene=0.04, coll=0.02, post=0.01 | drawn=105 monsters=1/3 cache=137 static/cells/rooms/lights=63/30/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=76156 ram=480MB
+states r/t= 1843 983
+fps=144 dt=7.0ms engine~=6.4ms | update_py=0.63, mini=0.17, head=0.12, interact=0.11, monsters=0.05, scene=0.04, coll=0.02, post=0.01 | drawn=105 monsters=1/3 cache=145 static/cells/rooms/lights=63/26/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=76258 ram=480MB
+states r/t= 1843 888
+fps=144 dt=7.0ms engine~=6.3ms | update_py=0.66, mini=0.15, head=0.12, scene=0.11, interact=0.09, coll=0.05, monsters=0.05, post=0.01 | drawn=135 monsters=1/3 cache=159 static/cells/rooms/lights=63/40/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=76359 ram=484MB
+states r/t= 2029 1145
+fps=145 dt=6.9ms engine~=6.4ms | update_py=0.57, mini=0.15, head=0.09, interact=0.09, scene=0.05, coll=0.05, monsters=0.04, zoom=0.01 | drawn=133 monsters=1/3 cache=172 static/cells/rooms/lights=63/45/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=76480 ram=484MB
+states r/t= 2084 1165
+fps=144 dt=7.0ms engine~=6.4ms | update_py=0.52, mini=0.13, interact=0.09, head=0.09, coll=0.04, monsters=0.04, scene=0.04, zoom=0.01 | drawn=133 monsters=1/3 cache=183 static/cells/rooms/lights=63/47/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=76637 ram=484MB
+states r/t= 2084 1158
+fps=144 dt=6.9ms engine~=6.2ms | update_py=0.74, interact=0.28, mini=0.13, head=0.09, scene=0.05, coll=0.05, monsters=0.04, post=0.01 | drawn=150 monsters=1/3 cache=192 static/cells/rooms/lights=63/59/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=76736 ram=486MB
+states r/t= 2081 1113
+fps=145 dt=6.9ms engine~=6.0ms | update_py=0.98, interact=0.46, mini=0.14, head=0.09, scene=0.07, coll=0.05, monsters=0.05, doors=0.02 | drawn=118 monsters=1/3 cache=192 static/cells/rooms/lights=63/38/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=76827 ram=487MB
+states r/t= 2092 942
+fps=144 dt=6.9ms engine~=5.9ms | update_py=1.01, interact=0.51, mini=0.14, head=0.09, scene=0.07, monsters=0.05, coll=0.05, post=0.01 | drawn=123 monsters=1/3 cache=192 static/cells/rooms/lights=63/37/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=76903 ram=487MB
+states r/t= 2090 1020
+fps=145 dt=6.9ms engine~=5.9ms | update_py=1.01, interact=0.52, mini=0.15, head=0.09, coll=0.05, monsters=0.05, scene=0.04, drawers=0.02 | drawn=118 monsters=1/3 cache=192 static/cells/rooms/lights=63/25/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=76912 ram=487MB
+states r/t= 2089 1016
+fps=144 dt=6.9ms engine~=5.9ms | update_py=1.05, interact=0.46, mini=0.22, head=0.10, scene=0.07, coll=0.06, monsters=0.04, post=0.01 | drawn=136 monsters=1/3 cache=192 static/cells/rooms/lights=63/39/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=76818 ram=487MB
+states r/t= 2183 972
+fps=145 dt=6.9ms engine~=6.0ms | update_py=0.92, mini=0.44, interact=0.18, head=0.09, coll=0.05, monsters=0.04, scene=0.04, post=0.01 | drawn=136 monsters=1/3 cache=192 static/cells/rooms/lights=63/37/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=77270 ram=487MB
+states r/t= 2197 1105
+fps=144 dt=6.9ms engine~=6.2ms | update_py=0.78, mini=0.33, interact=0.11, head=0.10, scene=0.07, coll=0.05, monsters=0.04, zoom=0.01 | drawn=118 monsters=1/3 cache=192 static/cells/rooms/lights=63/33/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77375 ram=487MB
+states r/t= 2172 1072
+fps=145 dt=6.9ms engine~=6.2ms | update_py=0.73, mini=0.33, interact=0.10, head=0.10, coll=0.05, scene=0.04, monsters=0.04, zoom=0.01 | drawn=118 monsters=1/3 cache=192 static/cells/rooms/lights=63/29/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77400 ram=487MB
+states r/t= 2172 957
+fps=144 dt=6.9ms engine~=6.2ms | update_py=0.78, mini=0.34, head=0.11, interact=0.10, coll=0.05, monsters=0.05, scene=0.04, zoom=0.01 | drawn=108 monsters=1/3 cache=192 static/cells/rooms/lights=63/21/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77414 ram=488MB
+states r/t= 2172 958
+fps=145 dt=6.9ms engine~=6.2ms | update_py=0.76, mini=0.33, head=0.10, interact=0.09, coll=0.05, monsters=0.05, scene=0.04, zoom=0.01 | drawn=132 monsters=1/3 cache=192 static/cells/rooms/lights=63/33/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=77441 ram=488MB
+states r/t= 2160 1099
+fps=144 dt=6.9ms engine~=6.3ms | update_py=0.65, mini=0.21, head=0.10, interact=0.10, scene=0.05, coll=0.05, monsters=0.05, zoom=0.01 | drawn=120 monsters=1/3 cache=192 static/cells/rooms/lights=63/41/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77465 ram=488MB
+states r/t= 2160 1142
+fps=145 dt=6.9ms engine~=6.4ms | update_py=0.53, mini=0.16, head=0.09, interact=0.07, coll=0.04, monsters=0.04, scene=0.04, post=0.01 | drawn=139 monsters=1/3 cache=192 static/cells/rooms/lights=63/52/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=77487 ram=488MB
+states r/t= 2098 1245
+fps=145 dt=6.9ms engine~=6.4ms | update_py=0.50, mini=0.16, head=0.09, interact=0.08, monsters=0.04, scene=0.04, coll=0.01, post=0.01 | drawn=130 monsters=1/3 cache=192 static/cells/rooms/lights=63/48/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77564 ram=488MB
+states r/t= 2161 1138
+fps=145 dt=6.9ms engine~=6.4ms | update_py=0.57, mini=0.21, head=0.09, interact=0.08, scene=0.04, monsters=0.04, coll=0.02, post=0.01 | drawn=120 monsters=1/3 cache=192 static/cells/rooms/lights=63/32/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77582 ram=488MB
+states r/t= 2161 1114
+fps=145 dt=6.9ms engine~=6.4ms | update_py=0.56, mini=0.20, head=0.09, interact=0.07, monsters=0.04, coll=0.04, scene=0.04, zoom=0.01 | drawn=120 monsters=1/3 cache=192 static/cells/rooms/lights=63/29/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77662 ram=488MB
+states r/t= 2160 1102
+fps=145 dt=6.9ms engine~=6.4ms | update_py=0.58, mini=0.17, head=0.10, interact=0.09, coll=0.05, monsters=0.04, scene=0.04, post=0.01 | drawn=110 monsters=1/3 cache=192 static/cells/rooms/lights=63/24/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77683 ram=488MB
+states r/t= 2160 1123
+fps=144 dt=6.9ms engine~=6.3ms | update_py=0.62, mini=0.20, interact=0.11, head=0.10, coll=0.05, monsters=0.05, scene=0.04, post=0.01 | drawn=127 monsters=1/3 cache=192 static/cells/rooms/lights=63/21/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=77697 ram=488MB
+states r/t= 2160 1154
+fps=145 dt=6.9ms engine~=6.3ms | update_py=0.65, mini=0.16, head=0.11, interact=0.11, coll=0.08, scene=0.05, monsters=0.05, post=0.01 | drawn=163 monsters=1/3 cache=192 static/cells/rooms/lights=63/47/4/63 post=True mini_off=False held_off=False lights_off=False pyobj=77735 ram=488MB
+states r/t= 2098 1428
+fps=144 dt=6.9ms engine~=6.3ms | update_py=0.68, mini=0.19, interact=0.13, coll=0.10, head=0.09, scene=0.05, monsters=0.04, zoom=0.01 | drawn=161 monsters=1/3 cache=192 static/cells/rooms/lights=63/49/4/63 post=True mini_off=False held_off=False lights_off=False pyobj=77797 ram=488MB
+states r/t= 2161 1485
+fps=145 dt=6.9ms engine~=6.0ms | update_py=0.90, mini=0.30, interact=0.25, coll=0.10, head=0.08, monsters=0.04, scene=0.04, post=0.01 | drawn=153 monsters=1/3 cache=192 static/cells/rooms/lights=63/45/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=77005 ram=488MB
+states r/t= 2187 1341
+fps=145 dt=6.9ms engine~=5.9ms | update_py=1.04, interact=0.43, mini=0.25, head=0.09, coll=0.09, monsters=0.04, scene=0.04, zoom=0.01 | drawn=143 monsters=1/3 cache=192 static/cells/rooms/lights=63/41/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78610 ram=489MB
+states r/t= 2102 1271
+fps=145 dt=7.0ms engine~=6.0ms | update_py=0.94, interact=0.45, mini=0.12, head=0.09, coll=0.07, scene=0.06, monsters=0.05, doors=0.02 | drawn=143 monsters=1/3 cache=192 static/cells/rooms/lights=63/41/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78666 ram=489MB
+states r/t= 2100 1076
+fps=145 dt=6.9ms engine~=5.9ms | update_py=1.00, interact=0.53, mini=0.13, coll=0.07, head=0.07, monsters=0.05, scene=0.04, drawers=0.01 | drawn=143 monsters=1/3 cache=192 static/cells/rooms/lights=63/38/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78680 ram=489MB
+states r/t= 2097 1080
+fps=144 dt=6.9ms engine~=5.9ms | update_py=1.04, interact=0.56, mini=0.13, coll=0.08, head=0.07, scene=0.04, monsters=0.04, drawers=0.01 | drawn=136 monsters=1/3 cache=192 static/cells/rooms/lights=63/25/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78681 ram=489MB
+states r/t= 2078 1077
+fps=145 dt=6.9ms engine~=5.9ms | update_py=1.01, interact=0.42, mini=0.23, head=0.09, coll=0.07, scene=0.06, monsters=0.04, post=0.01 | drawn=148 monsters=1/3 cache=192 static/cells/rooms/lights=63/35/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78776 ram=490MB
+states r/t= 2564 1224
+fps=145 dt=6.9ms engine~=5.8ms | update_py=1.18, interact=0.46, mini=0.36, head=0.10, coll=0.08, monsters=0.05, scene=0.04, post=0.02 | drawn=153 monsters=1/3 cache=192 static/cells/rooms/lights=63/37/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=76908 ram=491MB
+states r/t= 3347 1165
+fps=144 dt=6.9ms engine~=5.9ms | update_py=1.04, interact=0.49, mini=0.13, head=0.10, coll=0.09, monsters=0.05, scene=0.05, doors=0.03 | drawn=148 monsters=1/3 cache=192 static/cells/rooms/lights=63/24/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=77020 ram=492MB
+states r/t= 4200 1094
+fps=145 dt=6.9ms engine~=5.9ms | update_py=1.00, interact=0.48, mini=0.13, coll=0.09, head=0.09, scene=0.05, monsters=0.05, post=0.01 | drawn=148 monsters=1/3 cache=192 static/cells/rooms/lights=63/30/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=77062 ram=494MB
+states r/t= 5070 1121
+fps=144 dt=7.0ms engine~=5.9ms | update_py=1.08, interact=0.51, mini=0.18, coll=0.10, head=0.09, monsters=0.06, scene=0.04, drawers=0.02 | drawn=139 monsters=2/3 cache=192 static/cells/rooms/lights=63/25/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=77318 ram=495MB
+states r/t= 6209 1115
+fps=145 dt=6.9ms engine~=5.6ms | update_py=1.29, interact=0.49, mini=0.37, head=0.10, coll=0.10, monsters=0.07, scene=0.07, post=0.01 | drawn=130 monsters=2/3 cache=192 static/cells/rooms/lights=63/25/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=77377 ram=497MB
+states r/t= 7552 1180
+fps=144 dt=6.9ms engine~=5.7ms | update_py=1.29, interact=0.47, mini=0.41, head=0.10, monsters=0.08, coll=0.07, scene=0.05, post=0.01 | drawn=129 monsters=2/3 cache=192 static/cells/rooms/lights=63/25/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=77407 ram=500MB
+states r/t= 8835 1038
+fps=127 dt=7.9ms engine~=6.5ms | update_py=1.42, interact=0.53, mini=0.41, head=0.12, monsters=0.09, coll=0.09, scene=0.06, post=0.01 | drawn=146 monsters=2/3 cache=192 static/cells/rooms/lights=63/35/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=77534 ram=502MB
+states r/t= 9978 1161
+fps=134 dt=7.5ms engine~=6.2ms | update_py=1.27, interact=0.49, mini=0.35, head=0.11, monsters=0.08, coll=0.08, scene=0.05, zoom=0.01 | drawn=136 monsters=2/3 cache=192 static/cells/rooms/lights=63/34/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=77586 ram=504MB
+states r/t= 11184 1189
+fps=145 dt=6.9ms engine~=6.0ms | update_py=0.90, mini=0.34, interact=0.15, head=0.10, coll=0.08, monsters=0.08, scene=0.04, zoom=0.01 | drawn=122 monsters=2/3 cache=192 static/cells/rooms/lights=63/30/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77643 ram=507MB
+states r/t= 12489 1193
+fps=145 dt=6.9ms engine~=6.2ms | update_py=0.75, mini=0.30, head=0.10, interact=0.09, monsters=0.08, coll=0.05, scene=0.04, post=0.01 | drawn=121 monsters=2/3 cache=192 static/cells/rooms/lights=63/28/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77752 ram=509MB
+states r/t= 13780 1179
+fps=143 dt=7.0ms engine~=6.3ms | update_py=0.73, mini=0.28, head=0.11, interact=0.09, monsters=0.07, scene=0.04, coll=0.04, zoom=0.01 | drawn=123 monsters=2/3 cache=192 static/cells/rooms/lights=63/24/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77090 ram=511MB
+states r/t= 15091 1198
+fps=113 dt=8.9ms engine~=7.6ms | update_py=1.22, mini=0.60, head=0.14, interact=0.13, monsters=0.08, coll=0.07, scene=0.07, post=0.01 | drawn=132 monsters=2/3 cache=192 static/cells/rooms/lights=63/39/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79241 ram=516MB
+states r/t= 16130 1210
+fps=129 dt=7.8ms engine~=6.8ms | update_py=1.04, mini=0.34, interact=0.25, head=0.12, monsters=0.09, coll=0.06, scene=0.05, post=0.01 | drawn=118 monsters=2/3 cache=192 static/cells/rooms/lights=63/32/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79309 ram=518MB
+states r/t= 17232 1076
+fps=129 dt=7.8ms engine~=6.7ms | update_py=1.02, interact=0.36, mini=0.17, head=0.13, monsters=0.10, coll=0.08, scene=0.06, post=0.01 | drawn=118 monsters=2/3 cache=192 static/cells/rooms/lights=63/27/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79375 ram=519MB
+states r/t= 18393 1049
+fps=126 dt=8.0ms engine~=7.0ms | update_py=0.96, mini=0.39, interact=0.13, head=0.12, monsters=0.09, scene=0.06, coll=0.06, post=0.01 | drawn=122 monsters=2/3 cache=192 static/cells/rooms/lights=63/49/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77234 ram=522MB
+states r/t= 19629 1056
+fps=123 dt=8.2ms engine~=7.3ms | update_py=0.85, mini=0.23, interact=0.13, head=0.13, monsters=0.09, scene=0.07, coll=0.07, post=0.01 | drawn=133 monsters=2/3 cache=192 static/cells/rooms/lights=63/55/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77320 ram=523MB
+states r/t= 20713 1041
+=== RenderState attribute histogram (top 10) ===
+    4006  ('CullBinAttrib', 'DepthTestAttrib', 'DepthWriteAttrib', 'LightAttrib', 'ShaderAttrib', 'TextureAttrib', 'TransparencyAttrib')
+    4006  ('ColorScaleAttrib', 'CullBinAttrib', 'DepthTestAttrib', 'DepthWriteAttrib', 'LightAttrib', 'RenderModeAttrib', 'RescaleNormalAttrib', 'ShaderAttrib', 'TextureAttrib', 'TransparencyAttrib')
+    4006  ('ColorScaleAttrib', 'CullBinAttrib', 'DepthTestAttrib', 'DepthWriteAttrib', 'LightAttrib', 'RenderModeAttrib', 'ShaderAttrib', 'TextureAttrib', 'TransparencyAttrib')
+    2246  ('CullBinAttrib', 'DepthTestAttrib', 'DepthWriteAttrib', 'LightAttrib', 'ShaderAttrib', 'TransparencyAttrib')
+    2243  ('ColorScaleAttrib', 'CullBinAttrib', 'DepthTestAttrib', 'DepthWriteAttrib', 'LightAttrib', 'RenderModeAttrib', 'RescaleNormalAttrib', 'ShaderAttrib', 'TransparencyAttrib')
+    2243  ('ColorScaleAttrib', 'CullBinAttrib', 'DepthTestAttrib', 'DepthWriteAttrib', 'LightAttrib', 'RenderModeAttrib', 'ShaderAttrib', 'TransparencyAttrib')
+     345  ('LightAttrib', 'ShaderAttrib')
+     252  ('ColorScaleAttrib', 'CullFaceAttrib', 'FogAttrib', 'LightAttrib', 'RenderModeAttrib', 'RescaleNormalAttrib', 'ShaderAttrib', 'TextureAttrib', 'TransparencyAttrib')
+     196  ('CullFaceAttrib', 'FogAttrib', 'LightAttrib', 'RescaleNormalAttrib', 'ShaderAttrib')
+     167  ('ShaderAttrib',)
+fps=80 dt=12.6ms engine~=11.7ms | update_py=0.86, mini=0.17, interact=0.15, head=0.14, scene=0.11, monsters=0.10, coll=0.07, post=0.01 | drawn=133 monsters=2/3 cache=192 static/cells/rooms/lights=63/31/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77527 ram=526MB
+states r/t= 21433 1179
+fps=90 dt=11.2ms engine~=10.0ms | update_py=1.17, interact=0.39, mini=0.20, head=0.14, monsters=0.13, coll=0.08, scene=0.07, zoom=0.02 | drawn=133 monsters=2/3 cache=192 static/cells/rooms/lights=63/33/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77602 ram=528MB
+states r/t= 22243 1166
+fps=71 dt=14.2ms engine~=12.5ms | update_py=1.62, interact=0.72, mini=0.21, head=0.17, scene=0.13, monsters=0.12, coll=0.08, post=0.02 | drawn=128 monsters=2/3 cache=192 static/cells/rooms/lights=63/22/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77683 ram=529MB
+states r/t= 22883 1153
+fps=100 dt=10.1ms engine~=8.9ms | update_py=1.18, interact=0.56, mini=0.16, monsters=0.11, head=0.09, coll=0.06, scene=0.05, drawers=0.02 | drawn=133 monsters=2/3 cache=192 static/cells/rooms/lights=63/28/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77695 ram=531MB
+states r/t= 23695 1154
+fps=56 dt=18.3ms engine~=16.2ms | update_py=2.11, interact=1.19, mini=0.24, head=0.14, monsters=0.13, scene=0.11, coll=0.10, drawers=0.03 | drawn=133 monsters=2/3 cache=192 static/cells/rooms/lights=63/29/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77705 ram=531MB
+states r/t= 23944 1145
+fps=104 dt=9.7ms engine~=8.6ms | update_py=1.12, interact=0.41, mini=0.20, head=0.13, monsters=0.09, scene=0.09, coll=0.06, post=0.01 | drawn=111 monsters=2/3 cache=192 static/cells/rooms/lights=63/21/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77746 ram=533MB
+states r/t= 24939 1096
+fps=83 dt=12.1ms engine~=10.9ms | update_py=1.23, interact=0.42, mini=0.25, head=0.15, monsters=0.11, scene=0.08, coll=0.07, post=0.01 | drawn=141 monsters=2/3 cache=192 static/cells/rooms/lights=63/61/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=77765 ram=534MB
+states r/t= 25706 1078
+fps=69 dt=14.5ms engine~=12.4ms | update_py=2.11, mini=0.95, scene=0.51, interact=0.17, head=0.13, monsters=0.11, coll=0.08, post=0.02 | drawn=163 monsters=2/3 cache=192 static/cells/rooms/lights=63/55/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=79458 ram=536MB
+states r/t= 26494 1412
+fps=90 dt=11.1ms engine~=10.0ms | update_py=1.18, mini=0.49, scene=0.15, head=0.14, interact=0.12, monsters=0.09, coll=0.06, zoom=0.01 | drawn=182 monsters=2/3 cache=192 static/cells/rooms/lights=63/54/4/63 post=True mini_off=False held_off=False lights_off=False pyobj=77719 ram=549MB
+states r/t= 27412 1631
+fps=77 dt=13.0ms engine~=12.2ms | update_py=0.85, mini=0.22, head=0.13, interact=0.11, scene=0.11, monsters=0.09, coll=0.06, post=0.01 | drawn=191 monsters=2/3 cache=192 static/cells/rooms/lights=63/65/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=77430 ram=554MB
+states r/t= 28137 1587
+fps=62 dt=16.3ms engine~=15.3ms | update_py=0.96, mini=0.20, interact=0.15, head=0.14, scene=0.13, monsters=0.12, coll=0.07, zoom=0.02 | drawn=186 monsters=2/3 cache=192 static/cells/rooms/lights=63/54/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=77529 ram=555MB
+states r/t= 28729 1638
+fps=53 dt=19.3ms engine~=18.0ms | update_py=1.30, mini=0.60, head=0.15, interact=0.13, scene=0.13, monsters=0.11, coll=0.04, zoom=0.02 | drawn=181 monsters=2/3 cache=192 static/cells/rooms/lights=63/49/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=77874 ram=556MB
+states r/t= 29227 1566
+fps=70 dt=14.3ms engine~=13.3ms | update_py=1.02, mini=0.20, scene=0.18, head=0.15, interact=0.14, monsters=0.11, coll=0.10, post=0.01 | drawn=187 monsters=2/3 cache=192 static/cells/rooms/lights=63/47/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=77818 ram=558MB
+states r/t= 29929 1626
+fps=76 dt=13.4ms engine~=12.5ms | update_py=0.91, mini=0.20, interact=0.16, head=0.13, coll=0.11, monsters=0.11, scene=0.08, post=0.01 | drawn=184 monsters=2/3 cache=192 static/cells/rooms/lights=63/41/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=77901 ram=559MB
+states r/t= 30544 1627
+fps=52 dt=19.3ms engine~=17.6ms | update_py=1.72, interact=0.73, mini=0.24, head=0.16, monsters=0.14, scene=0.13, coll=0.12, doors=0.03 | drawn=189 monsters=2/3 cache=192 static/cells/rooms/lights=63/50/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=77726 ram=559MB
+states r/t= 31012 1438
+fps=52 dt=19.3ms engine~=17.6ms | update_py=1.66, interact=0.65, mini=0.23, scene=0.15, head=0.15, coll=0.14, monsters=0.14, doors=0.02 | drawn=199 monsters=2/3 cache=192 static/cells/rooms/lights=63/62/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=77806 ram=562MB
+states r/t= 31522 1357
+fps=43 dt=23.5ms engine~=21.6ms | update_py=1.92, interact=0.92, mini=0.22, scene=0.16, head=0.15, coll=0.13, monsters=0.13, drawers=0.03 | drawn=189 monsters=2/3 cache=192 static/cells/rooms/lights=63/52/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=77843 ram=562MB
+states r/t= 31910 1341
+fps=49 dt=20.7ms engine~=18.9ms | update_py=1.75, interact=0.74, mini=0.23, coll=0.18, monsters=0.14, head=0.13, scene=0.12, drawers=0.03 | drawn=165 monsters=2/3 cache=192 static/cells/rooms/lights=63/25/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=77864 ram=563MB
+states r/t= 32391 1314
+fps=56 dt=18.2ms engine~=16.1ms | update_py=2.05, interact=0.84, mini=0.56, scene=0.15, head=0.14, monsters=0.10, coll=0.10, post=0.01 | drawn=191 monsters=2/3 cache=192 static/cells/rooms/lights=63/42/4/63 post=True mini_off=False held_off=False lights_off=False pyobj=78127 ram=564MB
+states r/t= 32933 1507
+fps=62 dt=16.5ms engine~=15.2ms | update_py=1.40, interact=0.58, mini=0.18, head=0.14, coll=0.13, scene=0.10, monsters=0.10, doors=0.02 | drawn=181 monsters=2/3 cache=192 static/cells/rooms/lights=63/29/4/63 post=True mini_off=False held_off=False lights_off=False pyobj=78243 ram=565MB
+states r/t= 33470 1493
+fps=52 dt=19.3ms engine~=17.5ms | update_py=1.76, interact=0.73, coll=0.20, mini=0.20, scene=0.17, head=0.14, monsters=0.11, doors=0.02 | drawn=219 monsters=2/3 cache=192 static/cells/rooms/lights=63/91/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78308 ram=566MB
+states r/t= 33938 1365
+fps=53 dt=19.1ms engine~=17.4ms | update_py=1.72, interact=0.79, coll=0.19, mini=0.19, head=0.12, scene=0.12, monsters=0.11, drawers=0.03 | drawn=201 monsters=2/3 cache=192 static/cells/rooms/lights=63/60/4/63 post=True mini_off=False held_off=False lights_off=False pyobj=78306 ram=566MB
+states r/t= 34270 1394
+fps=51 dt=20.0ms engine~=17.5ms | update_py=2.47, mini=1.02, interact=0.71, coll=0.18, scene=0.15, head=0.14, monsters=0.10, post=0.02 | drawn=163 monsters=2/3 cache=192 static/cells/rooms/lights=63/26/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78481 ram=567MB
+states r/t= 34790 1459
+fps=46 dt=22.1ms engine~=20.3ms | update_py=1.86, interact=0.64, mini=0.33, coll=0.20, scene=0.20, head=0.18, monsters=0.13, post=0.02 | drawn=177 monsters=2/3 cache=192 static/cells/rooms/lights=63/31/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78582 ram=567MB
+states r/t= 35198 1464
+fps=55 dt=18.3ms engine~=16.7ms | update_py=1.64, mini=0.88, interact=0.18, coll=0.13, head=0.13, monsters=0.11, scene=0.07, zoom=0.02 | drawn=174 monsters=2/3 cache=192 static/cells/rooms/lights=63/27/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78178 ram=568MB
+states r/t= 35817 1402
+fps=60 dt=16.7ms engine~=15.6ms | update_py=1.11, mini=0.38, interact=0.15, coll=0.13, head=0.13, monsters=0.10, scene=0.08, post=0.01 | drawn=163 monsters=2/3 cache=192 static/cells/rooms/lights=63/33/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78293 ram=569MB
+states r/t= 36240 1340
+fps=40 dt=25.5ms engine~=23.4ms | update_py=2.13, interact=0.79, scene=0.28, mini=0.23, monsters=0.21, head=0.21, coll=0.18, doors=0.04 | drawn=202 monsters=2/3 cache=192 static/cells/rooms/lights=63/59/4/63 post=True mini_off=False held_off=False lights_off=False pyobj=78438 ram=569MB
+states r/t= 36600 1661
+fps=49 dt=20.7ms engine~=19.1ms | update_py=1.61, interact=0.68, mini=0.20, coll=0.16, head=0.14, monsters=0.14, scene=0.12, post=0.02 | drawn=163 monsters=2/3 cache=192 static/cells/rooms/lights=63/23/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78472 ram=571MB
+states r/t= 37041 1433
+fps=34 dt=29.7ms engine~=27.0ms | update_py=2.63, interact=1.10, mini=0.38, coll=0.25, scene=0.24, monsters=0.21, head=0.14, drawers=0.04 | drawn=174 monsters=3/3 cache=192 static/cells/rooms/lights=63/28/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78499 ram=571MB
+states r/t= 37411 1454
+fps=39 dt=26.6ms engine~=23.6ms | update_py=2.92, mini=1.00, interact=0.87, monsters=0.27, coll=0.25, head=0.20, scene=0.16, zoom=0.02 | drawn=172 monsters=3/3 cache=192 static/cells/rooms/lights=63/36/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78562 ram=573MB
+states r/t= 37954 1387
+fps=32 dt=31.4ms engine~=27.8ms | update_py=3.58, mini=2.22, monsters=0.26, head=0.24, scene=0.24, interact=0.22, coll=0.20, zoom=0.02 | drawn=204 monsters=3/3 cache=192 static/cells/rooms/lights=63/59/4/63 post=True mini_off=False held_off=False lights_off=False pyobj=78329 ram=573MB
+states r/t= 38314 1639
+fps=50 dt=20.2ms engine~=18.7ms | update_py=1.54, mini=0.67, monsters=0.17, interact=0.17, head=0.15, coll=0.15, scene=0.09, zoom=0.01 | drawn=204 monsters=3/3 cache=192 static/cells/rooms/lights=63/61/4/63 post=True mini_off=False held_off=False lights_off=False pyobj=78400 ram=574MB
+states r/t= 38911 1758
+fps=58 dt=17.3ms engine~=16.1ms | update_py=1.25, mini=0.50, interact=0.16, head=0.15, monsters=0.13, coll=0.11, scene=0.07, zoom=0.01 | drawn=197 monsters=3/3 cache=192 static/cells/rooms/lights=63/56/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78420 ram=575MB
+states r/t= 39607 1650
+fps=45 dt=22.5ms engine~=20.2ms | update_py=2.24, mini=0.84, interact=0.71, monsters=0.16, head=0.15, coll=0.13, scene=0.11, post=0.01 | drawn=192 monsters=3/3 cache=192 static/cells/rooms/lights=63/53/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78436 ram=576MB
+states r/t= 40147 1488
+fps=55 dt=18.6ms engine~=17.1ms | update_py=1.50, interact=0.50, mini=0.39, monsters=0.17, head=0.12, coll=0.09, scene=0.08, jumps=0.02 | drawn=181 monsters=3/3 cache=192 static/cells/rooms/lights=63/49/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78462 ram=577MB
+states r/t= 40793 1509
+fps=55 dt=18.3ms engine~=17.2ms | update_py=1.08, mini=0.26, interact=0.18, monsters=0.15, head=0.14, coll=0.12, scene=0.10, zoom=0.01 | drawn=171 monsters=3/3 cache=192 static/cells/rooms/lights=63/33/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78554 ram=578MB
+states r/t= 41453 1368
+fps=47 dt=21.7ms engine~=19.8ms | update_py=1.90, mini=0.87, monsters=0.19, coll=0.18, head=0.18, interact=0.16, scene=0.15, caught=0.02 | drawn=175 monsters=3/3 cache=192 static/cells/rooms/lights=63/31/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78668 ram=579MB
+states r/t= 42078 1565
+fps=43 dt=23.8ms engine~=22.0ms | update_py=1.78, mini=0.80, monsters=0.19, interact=0.19, coll=0.17, head=0.16, scene=0.13, post=0.01 | drawn=165 monsters=3/3 cache=192 static/cells/rooms/lights=63/34/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78770 ram=579MB
+states r/t= 42547 1369
+fps=52 dt=19.4ms engine~=18.0ms | update_py=1.38, mini=0.60, head=0.15, monsters=0.14, coll=0.13, interact=0.11, scene=0.09, post=0.01 | drawn=151 monsters=3/3 cache=192 static/cells/rooms/lights=63/30/0/63 post=True mini_off=False held_off=False lights_off=False pyobj=78836 ram=580MB
+states r/t= 43171 1375
+fps=43 dt=23.8ms engine~=22.1ms | update_py=1.70, mini=0.79, scene=0.27, monsters=0.16, head=0.14, interact=0.11, coll=0.08, post=0.02 | drawn=181 monsters=3/3 cache=192 static/cells/rooms/lights=63/34/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=78701 ram=581MB
+states r/t= 43705 1391
+fps=43 dt=23.4ms engine~=21.9ms | update_py=1.44, mini=0.79, monsters=0.15, head=0.13, interact=0.11, scene=0.09, coll=0.03, post=0.01 | drawn=188 monsters=3/3 cache=192 static/cells/rooms/lights=63/39/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78364 ram=582MB
+states r/t= 44268 1518
+fps=46 dt=22.1ms engine~=21.1ms | update_py=1.00, mini=0.36, monsters=0.15, head=0.12, interact=0.11, scene=0.08, coll=0.04, zoom=0.01 | drawn=167 monsters=3/3 cache=192 static/cells/rooms/lights=63/28/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=78440 ram=583MB
+states r/t= 44724 1395
+fps=49 dt=20.8ms engine~=19.8ms | update_py=1.01, mini=0.26, head=0.15, monsters=0.14, scene=0.12, interact=0.11, coll=0.08, post=0.01 | drawn=168 monsters=3/3 cache=192 static/cells/rooms/lights=63/39/0/63 post=True mini_off=False held_off=False lights_off=False pyobj=78539 ram=584MB
+states r/t= 45394 1414
+fps=46 dt=21.8ms engine~=20.9ms | update_py=0.96, mini=0.22, monsters=0.16, head=0.16, interact=0.13, scene=0.09, coll=0.03, post=0.02 | drawn=160 monsters=3/3 cache=192 static/cells/rooms/lights=63/30/0/63 post=True mini_off=False held_off=False lights_off=False pyobj=78665 ram=585MB
+states r/t= 45864 1386
+fps=43 dt=23.5ms engine~=22.4ms | update_py=1.09, mini=0.22, monsters=0.20, head=0.19, interact=0.16, scene=0.10, coll=0.04, post=0.02 | drawn=160 monsters=3/3 cache=192 static/cells/rooms/lights=63/26/0/63 post=True mini_off=False held_off=False lights_off=False pyobj=78733 ram=585MB
+states r/t= 46380 1386
+fps=38 dt=26.7ms engine~=25.5ms | update_py=1.21, mini=0.24, monsters=0.22, head=0.20, scene=0.15, interact=0.15, coll=0.04, queues=0.02 | drawn=160 monsters=3/3 cache=192 static/cells/rooms/lights=63/25/0/63 post=True mini_off=False held_off=False lights_off=False pyobj=78762 ram=587MB
+states r/t= 46836 1446
+fps=42 dt=24.0ms engine~=22.9ms | update_py=1.10, mini=0.27, head=0.16, monsters=0.15, scene=0.15, interact=0.13, coll=0.10, zoom=0.01 | drawn=212 monsters=3/3 cache=192 static/cells/rooms/lights=63/48/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78907 ram=588MB
+states r/t= 47422 1802
+fps=45 dt=22.7ms engine~=21.7ms | update_py=0.98, mini=0.24, interact=0.15, head=0.15, monsters=0.13, coll=0.10, scene=0.08, zoom=0.02 | drawn=207 monsters=3/3 cache=192 static/cells/rooms/lights=63/43/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78980 ram=589MB
+states r/t= 47962 1717
+fps=46 dt=22.1ms engine~=20.7ms | update_py=1.37, monsters=0.51, mini=0.26, head=0.15, interact=0.14, coll=0.10, scene=0.09, post=0.01 | drawn=197 monsters=3/3 cache=192 static/cells/rooms/lights=63/36/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78103 ram=589MB
+states r/t= 48514 1673
+fps=46 dt=21.9ms engine~=20.9ms | update_py=1.02, mini=0.26, interact=0.16, monsters=0.15, head=0.14, coll=0.10, scene=0.08, zoom=0.01 | drawn=199 monsters=3/3 cache=192 static/cells/rooms/lights=63/34/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78191 ram=589MB
+states r/t= 48993 1519
+fps=45 dt=22.3ms engine~=20.9ms | update_py=1.43, interact=0.54, mini=0.19, coll=0.16, head=0.15, monsters=0.15, scene=0.10, post=0.01 | drawn=199 monsters=3/3 cache=192 static/cells/rooms/lights=63/27/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78108 ram=590MB
+states r/t= 49524 1462
+fps=38 dt=26.7ms engine~=24.8ms | update_py=1.84, interact=0.70, mini=0.28, coll=0.19, monsters=0.19, head=0.16, scene=0.14, post=0.01 | drawn=182 monsters=3/3 cache=192 static/cells/rooms/lights=63/23/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78173 ram=591MB
+states r/t= 50062 1551
+fps=46 dt=22.1ms engine~=20.8ms | update_py=1.29, interact=0.32, mini=0.28, monsters=0.18, head=0.16, coll=0.14, scene=0.08, zoom=0.01 | drawn=184 monsters=3/3 cache=192 static/cells/rooms/lights=63/22/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=78204 ram=591MB
+states r/t= 50534 1582
+fps=34 dt=30.5ms engine~=28.7ms | update_py=1.82, mini=0.36, head=0.33, monsters=0.24, coll=0.22, interact=0.21, scene=0.20, caught=0.06 | drawn=158 monsters=3/3 cache=192 static/cells/rooms/lights=63/21/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=78246 ram=593MB
+states r/t= 51020 1464
+fps=42 dt=24.4ms engine~=23.2ms | update_py=1.17, mini=0.28, monsters=0.18, head=0.16, interact=0.16, scene=0.16, coll=0.10, zoom=0.02 | drawn=180 monsters=3/3 cache=192 static/cells/rooms/lights=63/48/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78302 ram=594MB
+states r/t= 51526 1564
+fps=33 dt=30.3ms engine~=29.0ms | update_py=1.35, mini=0.32, head=0.26, monsters=0.21, interact=0.17, scene=0.13, coll=0.09, post=0.02 | drawn=182 monsters=3/3 cache=192 static/cells/rooms/lights=63/47/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78218 ram=595MB
+states r/t= 51840 1556
+fps=29 dt=35.9ms engine~=34.5ms | update_py=1.42, mini=0.27, head=0.23, monsters=0.22, scene=0.18, interact=0.18, coll=0.12, zoom=0.02 | drawn=162 monsters=3/3 cache=192 static/cells/rooms/lights=63/41/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=78251 ram=598MB
+states r/t= 52216 1555
+fps=38 dt=27.0ms engine~=26.0ms | update_py=0.93, mini=0.20, monsters=0.15, head=0.14, interact=0.12, scene=0.12, coll=0.05, post=0.01 | drawn=167 monsters=3/3 cache=192 static/cells/rooms/lights=63/41/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=78280 ram=599MB
+states r/t= 52672 1488
+fps=41 dt=24.8ms engine~=23.9ms | update_py=0.86, mini=0.17, head=0.16, monsters=0.14, scene=0.11, interact=0.11, coll=0.02, zoom=0.02 | drawn=162 monsters=3/3 cache=192 static/cells/rooms/lights=63/29/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=78313 ram=599MB
+states r/t= 53136 1389
+fps=25 dt=40.3ms engine~=38.5ms | update_py=1.83, mini=0.58, monsters=0.31, head=0.26, interact=0.23, scene=0.17, coll=0.04, post=0.02 | drawn=160 monsters=3/3 cache=192 static/cells/rooms/lights=63/22/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=78328 ram=600MB
+states r/t= 53518 1434
+fps=29 dt=35.8ms engine~=34.4ms | update_py=1.39, mini=0.29, head=0.24, monsters=0.22, scene=0.19, interact=0.16, coll=0.09, post=0.02 | drawn=184 monsters=3/3 cache=192 static/cells/rooms/lights=63/40/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78238 ram=600MB
+states r/t= 53791 1694
+fps=33 dt=30.4ms engine~=29.1ms | update_py=1.22, mini=0.26, monsters=0.20, head=0.19, interact=0.18, scene=0.13, coll=0.08, caught=0.03 | drawn=184 monsters=3/3 cache=192 static/cells/rooms/lights=63/45/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78248 ram=601MB
+states r/t= 54187 1686
+fps=42 dt=24.3ms engine~=23.4ms | update_py=0.98, mini=0.18, monsters=0.17, head=0.14, interact=0.14, scene=0.11, coll=0.09, post=0.01 | drawn=194 monsters=3/3 cache=192 static/cells/rooms/lights=63/57/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78268 ram=602MB
+states r/t= 54691 1561
+fps=42 dt=23.8ms engine~=22.9ms | update_py=0.94, mini=0.20, interact=0.16, head=0.15, monsters=0.14, scene=0.09, coll=0.06, post=0.01 | drawn=182 monsters=3/3 cache=192 static/cells/rooms/lights=63/39/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78319 ram=602MB
+states r/t= 55277 1571
+fps=42 dt=24.5ms engine~=23.5ms | update_py=0.98, mini=0.24, interact=0.15, monsters=0.15, head=0.14, scene=0.10, coll=0.07, zoom=0.01 | drawn=184 monsters=3/3 cache=192 static/cells/rooms/lights=63/37/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78333 ram=603MB
+states r/t= 55699 1528
+fps=40 dt=25.4ms engine~=24.4ms | update_py=1.01, mini=0.19, head=0.18, monsters=0.15, interact=0.15, coll=0.09, scene=0.09, zoom=0.02 | drawn=174 monsters=3/3 cache=192 static/cells/rooms/lights=63/41/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78344 ram=604MB
+states r/t= 56179 1542
+fps=40 dt=25.6ms engine~=24.6ms | update_py=1.01, mini=0.18, interact=0.16, head=0.16, monsters=0.15, scene=0.10, coll=0.08, zoom=0.04 | drawn=167 monsters=3/3 cache=192 static/cells/rooms/lights=63/38/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=78473 ram=602MB
+states r/t= 56659 1528
+fps=30 dt=33.7ms engine~=32.4ms | update_py=1.26, head=0.25, mini=0.23, monsters=0.19, scene=0.17, interact=0.16, coll=0.08, post=0.02 | drawn=172 monsters=3/3 cache=192 static/cells/rooms/lights=63/43/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=78545 ram=603MB
+states r/t= 57044 1520
+fps=39 dt=26.1ms engine~=25.1ms | update_py=0.92, mini=0.19, monsters=0.16, head=0.16, interact=0.12, scene=0.11, coll=0.03, post=0.01 | drawn=177 monsters=3/3 cache=192 static/cells/rooms/lights=63/49/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=78680 ram=604MB
+states r/t= 57537 1560
+fps=39 dt=26.2ms engine~=25.2ms | update_py=1.01, mini=0.25, head=0.16, monsters=0.15, interact=0.14, scene=0.12, coll=0.04, post=0.01 | drawn=165 monsters=3/3 cache=192 static/cells/rooms/lights=63/43/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=78749 ram=605MB
+states r/t= 58087 1518
+fps=34 dt=29.8ms engine~=27.2ms | update_py=2.65, mini=1.52, scene=0.38, monsters=0.18, head=0.17, interact=0.15, coll=0.09, zoom=0.02 | drawn=182 monsters=3/3 cache=192 static/cells/rooms/lights=63/43/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78898 ram=607MB
+states r/t= 58586 1715
+fps=29 dt=35.0ms engine~=32.7ms | update_py=2.30, mini=1.28, monsters=0.23, interact=0.20, head=0.19, scene=0.14, coll=0.09, post=0.02 | drawn=182 monsters=3/3 cache=192 static/cells/rooms/lights=63/38/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=78806 ram=608MB
+states r/t= 58885 1609
+fps=37 dt=27.4ms engine~=26.0ms | update_py=1.37, interact=0.54, monsters=0.17, mini=0.15, head=0.13, scene=0.11, coll=0.07, doors=0.03 | drawn=180 monsters=3/3 cache=192 static/cells/rooms/lights=63/34/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=78895 ram=611MB
+states r/t= 59326 1512
+fps=37 dt=27.6ms engine~=26.2ms | update_py=1.45, interact=0.54, mini=0.18, scene=0.16, monsters=0.15, head=0.14, coll=0.11, doors=0.02 | drawn=185 monsters=3/3 cache=192 static/cells/rooms/lights=63/58/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=78981 ram=611MB
+states r/t= 59763 1549
+fps=32 dt=31.3ms engine~=29.4ms | update_py=1.83, interact=0.76, monsters=0.21, scene=0.20, mini=0.20, head=0.14, coll=0.08, drawers=0.05 | drawn=175 monsters=3/3 cache=192 static/cells/rooms/lights=63/46/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79024 ram=612MB
+states r/t= 60146 1550
+fps=20 dt=52.4ms engine~=49.9ms | update_py=2.46, interact=1.10, mini=0.29, monsters=0.23, scene=0.20, head=0.20, coll=0.12, caught=0.08 | drawn=192 monsters=3/3 cache=192 static/cells/rooms/lights=63/60/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=79040 ram=612MB
+states r/t= 60385 1546
+fps=34 dt=29.7ms engine~=28.2ms | update_py=1.50, interact=0.55, mini=0.27, monsters=0.18, scene=0.13, head=0.12, coll=0.07, drawers=0.02 | drawn=182 monsters=3/3 cache=192 static/cells/rooms/lights=63/38/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=79069 ram=613MB
+states r/t= 60872 1647
+fps=32 dt=31.9ms engine~=29.2ms | update_py=2.67, mini=1.43, interact=0.44, monsters=0.28, head=0.18, scene=0.09, coll=0.08, caught=0.02 | drawn=172 monsters=3/3 cache=192 static/cells/rooms/lights=63/29/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79131 ram=614MB
+states r/t= 61303 1499
+fps=33 dt=30.9ms engine~=28.9ms | update_py=2.02, mini=0.97, scene=0.21, monsters=0.19, head=0.17, interact=0.17, coll=0.16, post=0.01 | drawn=174 monsters=3/3 cache=192 static/cells/rooms/lights=63/38/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79239 ram=614MB
+states r/t= 61664 1484
+fps=21 dt=47.9ms engine~=45.1ms | update_py=2.85, mini=1.39, scene=0.41, monsters=0.29, head=0.26, interact=0.22, coll=0.10, caught=0.02 | drawn=181 monsters=3/3 cache=192 static/cells/rooms/lights=63/40/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=79342 ram=614MB
+states r/t= 61916 1611
+fps=33 dt=30.4ms engine~=28.3ms | update_py=2.12, mini=1.24, monsters=0.22, interact=0.17, head=0.16, scene=0.09, coll=0.08, zoom=0.02 | drawn=174 monsters=3/3 cache=192 static/cells/rooms/lights=63/38/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79355 ram=614MB
+states r/t= 62312 1613
+fps=24 dt=43.1ms engine~=40.9ms | update_py=2.19, mini=1.05, monsters=0.29, interact=0.21, head=0.20, scene=0.16, coll=0.10, zoom=0.02 | drawn=180 monsters=3/3 cache=192 static/cells/rooms/lights=63/43/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=79369 ram=615MB
+states r/t= 62589 1614
+fps=33 dt=30.6ms engine~=28.9ms | update_py=1.71, mini=0.93, monsters=0.21, head=0.13, interact=0.12, scene=0.08, coll=0.08, zoom=0.02 | drawn=184 monsters=3/3 cache=192 static/cells/rooms/lights=63/48/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=79393 ram=615MB
+states r/t= 63031 1682
+fps=33 dt=30.9ms engine~=29.1ms | update_py=1.84, mini=0.98, monsters=0.23, head=0.14, scene=0.14, interact=0.10, coll=0.08, caught=0.01 | drawn=169 monsters=3/3 cache=192 static/cells/rooms/lights=63/39/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79417 ram=616MB
+states r/t= 63392 1612
+fps=32 dt=32.6ms engine~=30.9ms | update_py=1.65, mini=0.86, monsters=0.22, head=0.15, interact=0.13, scene=0.11, coll=0.03, post=0.02 | drawn=169 monsters=3/3 cache=192 static/cells/rooms/lights=63/35/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79448 ram=617MB
+states r/t= 63776 1649
+fps=31 dt=32.5ms engine~=31.0ms | update_py=1.55, mini=0.78, monsters=0.25, head=0.16, interact=0.11, scene=0.10, coll=0.02, zoom=0.01 | drawn=169 monsters=3/3 cache=192 static/cells/rooms/lights=63/31/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79472 ram=617MB
+states r/t= 64148 1545
+fps=27 dt=37.4ms engine~=35.5ms | update_py=1.95, mini=0.97, monsters=0.26, head=0.22, scene=0.15, interact=0.13, coll=0.06, post=0.01 | drawn=179 monsters=3/3 cache=192 static/cells/rooms/lights=63/35/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79501 ram=618MB
+states r/t= 64472 1610
+fps=26 dt=38.6ms engine~=37.1ms | update_py=1.50, mini=0.53, monsters=0.28, head=0.15, interact=0.15, scene=0.15, coll=0.07, caught=0.02 | drawn=185 monsters=3/3 cache=192 static/cells/rooms/lights=63/37/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79523 ram=618MB
+states r/t= 64789 1631
+fps=32 dt=32.0ms engine~=29.9ms | update_py=2.08, mini=1.18, monsters=0.19, head=0.18, interact=0.18, scene=0.11, coll=0.09, zoom=0.03 | drawn=175 monsters=3/3 cache=192 static/cells/rooms/lights=63/34/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79545 ram=619MB
+states r/t= 65184 1491
+fps=34 dt=30.1ms engine~=28.3ms | update_py=1.83, mini=0.98, monsters=0.20, head=0.16, interact=0.15, scene=0.12, coll=0.08, post=0.01 | drawn=174 monsters=3/3 cache=192 static/cells/rooms/lights=63/30/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79567 ram=621MB
+states r/t= 65576 1478
+fps=34 dt=30.3ms engine~=28.5ms | update_py=1.78, mini=0.92, monsters=0.20, head=0.17, interact=0.14, scene=0.11, coll=0.07, zoom=0.02 | drawn=174 monsters=3/3 cache=192 static/cells/rooms/lights=63/29/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79589 ram=621MB
+states r/t= 65984 1484
+fps=30 dt=34.3ms engine~=32.4ms | update_py=1.86, mini=0.93, monsters=0.19, head=0.17, scene=0.17, interact=0.16, coll=0.07, zoom=0.02 | drawn=189 monsters=3/3 cache=192 static/cells/rooms/lights=63/37/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=79621 ram=622MB
+states r/t= 66344 1668
+fps=28 dt=36.1ms engine~=34.5ms | update_py=1.67, mini=0.81, monsters=0.19, head=0.17, interact=0.14, scene=0.13, coll=0.08, zoom=0.01 | drawn=176 monsters=3/3 cache=192 static/cells/rooms/lights=63/41/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79636 ram=623MB
+states r/t= 66666 1608
+fps=30 dt=33.7ms engine~=31.8ms | update_py=1.91, mini=1.09, monsters=0.20, head=0.16, scene=0.13, interact=0.12, coll=0.04, zoom=0.01 | drawn=195 monsters=3/3 cache=192 static/cells/rooms/lights=63/49/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=79652 ram=624MB
+states r/t= 67052 1754
+fps=30 dt=34.0ms engine~=32.2ms | update_py=1.80, mini=0.99, monsters=0.19, head=0.17, scene=0.13, interact=0.12, coll=0.03, doors=0.02 | drawn=177 monsters=3/3 cache=192 static/cells/rooms/lights=63/34/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79666 ram=624MB
+states r/t= 67400 1648
+fps=31 dt=32.3ms engine~=30.5ms | update_py=1.79, mini=1.00, monsters=0.18, head=0.15, interact=0.13, scene=0.13, coll=0.04, post=0.02 | drawn=177 monsters=3/3 cache=192 static/cells/rooms/lights=63/30/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79684 ram=625MB
+states r/t= 67772 1657
+fps=31 dt=33.2ms engine~=31.4ms | update_py=1.88, mini=1.01, head=0.19, monsters=0.18, interact=0.12, scene=0.11, coll=0.11, post=0.02 | drawn=167 monsters=3/3 cache=192 static/cells/rooms/lights=63/24/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79696 ram=625MB
+states r/t= 68144 1666
+fps=31 dt=33.4ms engine~=31.9ms | update_py=1.53, mini=0.80, interact=0.15, monsters=0.15, head=0.14, scene=0.09, coll=0.06, zoom=0.01 | drawn=166 monsters=3/3 cache=192 static/cells/rooms/lights=63/21/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79712 ram=626MB
+states r/t= 68516 1630
+fps=25 dt=42.2ms engine~=39.9ms | update_py=2.28, mini=1.18, scene=0.26, monsters=0.20, interact=0.18, head=0.17, coll=0.09, post=0.02 | drawn=219 monsters=3/3 cache=192 static/cells/rooms/lights=63/49/4/63 post=True mini_off=False held_off=False lights_off=False pyobj=79734 ram=626MB
+states r/t= 68835 1807
+fps=26 dt=39.8ms engine~=37.9ms | update_py=1.82, mini=0.92, interact=0.17, head=0.16, monsters=0.15, coll=0.14, scene=0.12, zoom=0.02 | drawn=208 monsters=3/3 cache=192 static/cells/rooms/lights=63/43/4/63 post=True mini_off=False held_off=False lights_off=False pyobj=79731 ram=627MB
+states r/t= 69135 1804
+fps=24 dt=41.9ms engine~=39.7ms | update_py=2.21, mini=0.98, interact=0.29, coll=0.19, monsters=0.19, head=0.18, scene=0.17, queues=0.02 | drawn=198 monsters=3/3 cache=192 static/cells/rooms/lights=63/42/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=79737 ram=627MB
+states r/t= 69423 1881
+fps=29 dt=35.6ms engine~=33.4ms | update_py=2.18, mini=0.86, interact=0.60, head=0.16, scene=0.15, monsters=0.14, coll=0.13, post=0.02 | drawn=208 monsters=3/3 cache=192 static/cells/rooms/lights=63/47/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=79732 ram=627MB
+states r/t= 69771 1563
+fps=28 dt=36.6ms engine~=34.1ms | update_py=2.51, mini=0.92, interact=0.66, head=0.29, monsters=0.19, coll=0.15, scene=0.14, zoom=0.01 | drawn=190 monsters=3/3 cache=192 static/cells/rooms/lights=63/34/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=79728 ram=628MB
+states r/t= 70110 1497
+fps=29 dt=34.8ms engine~=33.4ms | update_py=1.45, mini=0.31, monsters=0.27, interact=0.26, head=0.16, scene=0.15, coll=0.13, post=0.02 | drawn=195 monsters=3/3 cache=192 static/cells/rooms/lights=63/35/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=79729 ram=628MB
+states r/t= 70441 1493
+fps=27 dt=39.0ms engine~=37.4ms | update_py=1.59, mini=0.37, monsters=0.29, scene=0.22, interact=0.21, head=0.18, coll=0.12, post=0.02 | drawn=219 monsters=3/3 cache=192 static/cells/rooms/lights=63/58/3/63 post=True mini_off=False held_off=False lights_off=False pyobj=79730 ram=628MB
+states r/t= 70683 1561
+fps=28 dt=36.3ms engine~=35.1ms | update_py=1.17, monsters=0.25, head=0.20, mini=0.19, interact=0.14, scene=0.12, coll=0.12, post=0.02 | drawn=207 monsters=3/3 cache=192 static/cells/rooms/lights=63/54/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=79780 ram=629MB
+states r/t= 71019 1606
+fps=28 dt=36.5ms engine~=35.1ms | update_py=1.36, mini=0.33, monsters=0.28, head=0.19, interact=0.15, scene=0.13, coll=0.09, caught=0.02 | drawn=208 monsters=3/3 cache=192 static/cells/rooms/lights=63/59/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79856 ram=630MB
+states r/t= 71437 1623
+fps=31 dt=32.5ms engine~=31.5ms | update_py=1.02, mini=0.25, monsters=0.22, head=0.15, interact=0.11, scene=0.11, coll=0.03, post=0.01 | drawn=205 monsters=3/3 cache=192 static/cells/rooms/lights=63/68/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79952 ram=631MB
+states r/t= 71752 1611
+fps=26 dt=39.4ms engine~=38.2ms | update_py=1.23, monsters=0.26, mini=0.20, head=0.18, scene=0.17, interact=0.16, coll=0.10, zoom=0.02 | drawn=210 monsters=3/3 cache=192 static/cells/rooms/lights=63/83/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=79951 ram=632MB
+states r/t= 72071 1526
+fps=30 dt=34.2ms engine~=33.0ms | update_py=1.19, mini=0.25, monsters=0.21, head=0.17, interact=0.17, scene=0.15, coll=0.09, post=0.02 | drawn=215 monsters=3/3 cache=192 static/cells/rooms/lights=63/78/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=80005 ram=633MB
+states r/t= 72513 1501
+fps=30 dt=33.6ms engine~=32.5ms | update_py=1.19, mini=0.23, monsters=0.20, scene=0.18, interact=0.17, head=0.17, coll=0.08, post=0.01 | drawn=212 monsters=3/3 cache=192 static/cells/rooms/lights=63/70/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=80114 ram=634MB
+states r/t= 72786 1469
+fps=31 dt=33.1ms engine~=32.0ms | update_py=1.04, head=0.18, monsters=0.18, mini=0.17, scene=0.15, interact=0.14, coll=0.08, post=0.02 | drawn=212 monsters=3/3 cache=192 static/cells/rooms/lights=63/76/2/63 post=True mini_off=False held_off=False lights_off=False pyobj=80173 ram=634MB
+states r/t= 73156 1466
+fps=28 dt=36.8ms engine~=35.5ms | update_py=1.28, mini=0.29, monsters=0.22, scene=0.19, head=0.18, interact=0.13, coll=0.11, post=0.01 | drawn=188 monsters=3/3 cache=192 static/cells/rooms/lights=63/69/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=80291 ram=635MB
+states r/t= 73574 1485
+fps=32 dt=32.2ms engine~=31.1ms | update_py=1.07, monsters=0.21, mini=0.19, head=0.16, interact=0.14, scene=0.11, coll=0.09, post=0.02 | drawn=183 monsters=3/3 cache=192 static/cells/rooms/lights=63/59/1/63 post=True mini_off=False held_off=False lights_off=False pyobj=80346 ram=635MB
+states r/t= 73876 1476
+fps=22 dt=47.3ms engine~=45.4ms | update_py=1.92, mini=0.53, monsters=0.38, head=0.28, scene=0.21, interact=0.19, coll=0.13, post=0.02 | drawn=181 monsters=3/3 cache=192 static/cells/rooms/lights=63/59/0/63 post=True mini_off=False held_off=False lights_off=False pyobj=80429 ram=636MB
+states r/t= 74215 1488
+fps=30 dt=33.7ms engine~=32.7ms | update_py=1.00, mini=0.22, monsters=0.18, head=0.15, scene=0.12, interact=0.12, coll=0.04, post=0.03 | drawn=188 monsters=3/3 cache=192 static/cells/rooms/lights=63/52/0/63 post=True mini_off=False held_off=False lights_off=False pyobj=80485 ram=636MB
+states r/t= 74493 1461
+fps=22 dt=46.3ms engine~=45.0ms | update_py=1.31, monsters=0.30, mini=0.23, scene=0.21, head=0.18, interact=0.15, post=0.04, coll=0.04 | drawn=183 monsters=3/3 cache=192 static/cells/rooms/lights=63/48/0/63 post=True mini_off=False held_off=False lights_off=False pyobj=80481 ram=636MB
+states r/t= 74767 1481
