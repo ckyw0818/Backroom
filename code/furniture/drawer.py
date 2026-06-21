@@ -151,10 +151,11 @@ class DrawerMixin:
         })
         selected_rooms = random.sample(room_cells, min(NOTE_COUNT, len(room_cells)))
         numbers = random.sample(NOTE_NUMBER_CHOICES, len(selected_rooms))
+        blood_counts = random.sample(range(1, len(selected_rooms) + 1), len(selected_rooms))
         self.note_placements = []
         self.note_placement_lookup = {}
 
-        for index, (room_cell, number) in enumerate(zip(selected_rooms, numbers), start=1):
+        for room_cell, number, blood_count in zip(selected_rooms, numbers, blood_counts):
             drawer_name = random.choice(NOTE_DRAWER_NAMES)
             key = (room_cell, drawer_name)
             placement = {
@@ -162,7 +163,7 @@ class DrawerMixin:
                 'room_cell': room_cell,
                 'drawer_name': drawer_name,
                 'number': number,
-                'blood_count': index,
+                'blood_count': blood_count,
             }
             self.note_placements.append(placement)
             self.note_placement_lookup[key] = placement
