@@ -4,16 +4,13 @@ import random
 import time as _t
 
 from ursina import *
-try:
-    from ursina.shaders import lit_with_shadows_shader
-except ImportError:
-    lit_with_shadows_shader = None
 
 from pathlib import Path
 
 from direct.showbase import ShowBaseGlobal
 from panda3d.core import AmbientLight as Panda3dAmbientLight, Point2, PStatCollector, loadPrcFileData
 
+from cinematic import CinematicMode
 from character.monster import MonsterAI, NOISE_ATTRACT_RADIUS_CELLS
 from character.player_controller import CAMERA_FOV, RUN_SPEED, HeadBob, create_player
 from furniture.door import DOOR_DENSITY, DOOR_FACE_SALTS
@@ -864,7 +861,17 @@ PROJECT_DIR = Path(__file__).resolve().parent.parent
 application.asset_folder = PROJECT_DIR
 
 render_root = app.render
-render_root.setShaderAuto()
+# NOTE: render_root.setShaderAuto() was here. It turned on Panda3D's per-node
+# automatic shader generator for the whole scene. This game bakes all lighting
+# into vertex colors + setColorScale tints and uses NO real-time lights or
+# shadows (the only light is a black AmbientLight), so the auto-shader did zero
+# useful work while minting a distinct generated ShaderAttrib per
+# (node-state x cull x ColorScale) combo. Those composites are pinned alive by
+# the never-destroyed furniture cache, so RenderState.getNumStates() climbed
+# unbounded (1000 -> 70000) and per-frame state traversal caused the late-game
+# frame drop. Removed; the world renders via the fixed-function/default path.
+# Toggle at runtime with the '9' debug key to compare (see toggle_shader_auto_debug).
+_shader_auto_enabled = False
 render_root.clearLight()
 
 window.exit_button.visible = False
@@ -872,8 +879,6 @@ window.fps_counter.enabled = False
 window.entity_counter.enabled = False
 window.collider_counter.enabled = False
 window.fullscreen = True
-
-WORLD_SHADER = lit_with_shadows_shader
 
 camera.background_color = DARK_COLOR
 camera.fov = CAMERA_FOV
@@ -906,6 +911,7 @@ menu_music_fade_timer = 0.0
 game_start_fade_timer = 0.0
 game_start_fade_active = False
 zoom_amount = 0.0
+cinematic = CinematicMode()
 
 _amb = Panda3dAmbientLight('ambient')
 _amb.setColor((0.0, 0.0, 0.0, 1.0))
@@ -1477,6 +1483,10 @@ def update():
         main_menu.update()
         return
 
+    if cinematic.active:
+        cinematic.update()
+        return
+
     if game_clear_sequence.update():
         update_camera_zoom(False)
         if held_keys['escape']:
@@ -1695,6 +1705,22 @@ def toggle_light_fixtures_debug():
     print(f'debug: light fixtures off = {light_fixtures_debug_disabled}')
 
 
+def toggle_shader_auto_debug():
+    # Verification toggle for the RenderState leak fix. With auto-shader OFF
+    # (default now), RenderState.getNumStates() should plateau; turning it ON
+    # reproduces the unbounded growth. Use this to confirm the fix and to check
+    # that tints/fog/lighting still look right with it off.
+    global _shader_auto_enabled
+
+    _shader_auto_enabled = not _shader_auto_enabled
+    if _shader_auto_enabled:
+        render_root.setShaderAuto()
+    else:
+        render_root.setShaderOff()
+    from panda3d.core import RenderState
+    print(f'debug: shader-auto = {_shader_auto_enabled}  states r={RenderState.getNumStates()}')
+
+
 def print_engine_debug():
     base = ShowBaseGlobal.base
     print('--- engine debug ---')
@@ -1745,6 +1771,15 @@ def input(key):
         main_menu.handle_key(key)
         return
 
+    if key in ('`', 'tilde', 'backtick', '~', 'section'):
+        cinematic.toggle(player, map_renderer, crosshair)
+        return
+
+    if cinematic.active:
+        if key == 'escape':
+            cinematic.stop()
+        return
+
     if game_clear_sequence.is_active():
         return
 
@@ -1793,6 +1828,10 @@ def input(key):
 
     if key == '8':
         print_engine_debug()
+        return
+
+    if key == '9':
+        toggle_shader_auto_debug()
         return
 
     if key == 'e':

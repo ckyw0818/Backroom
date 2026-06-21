@@ -139,7 +139,7 @@ class BedMixin:
     def add_bed_decoration(self, entities, cx, cz, skip_faces, west_x, north_z, east_x, south_z, near_lights):
         position, rotation_y, face = self.bed_pose_for_room(cx, cz, skip_faces, west_x, north_z, east_x, south_z)
         light_val = self.light_system.light_at(position[0], BED_COLLIDER_H * 0.5, position[2], near_lights)
-        tint = self.light_system.shaded_color(WALL_RGB, light_val)
+        tint = self.light_system.shaded_color(WALL_RGB, light_val, quantize=True)
         entity = Entity(
             position=position,
             rotation=(0, rotation_y, 0),

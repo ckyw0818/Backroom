@@ -4,6 +4,10 @@ from ursina import Entity, color
 LIGHT_COLOR = color.Color(1.0, 0.96, 0.55, 1)
 LIGHT_RADIUS = 6.8
 LIGHT_POWER = 2.0
+# Lighting amount is snapped to this grid for per-node furniture tints so they
+# share a small palette of ColorScaleAttribs (caps auto-shader RenderState
+# growth). ~24 brightness steps over the lit range: visually imperceptible.
+SHADE_QUANTIZE_STEP = 0.06
 LIGHT_PANEL_SAMPLES = (
     (0.0, 0.0),
     (-0.62, 0.0),
@@ -212,7 +216,18 @@ class LightSystem:
                 del self._light_cache[old]
         return total
 
-    def shaded_color(self, base, amount, minimum=0.055):
+    def shaded_color(self, base, amount, minimum=0.055, quantize=False):
+        # Per-node setColorScale tints (furniture/doors) feed Panda's auto-shader
+        # generator, which mints a distinct cached RenderState for every unique
+        # (LightAttrib, ColorScaleAttrib, TextureAttrib) combo. A continuous
+        # `amount` => a near-unique tint per node => thousands of permanent
+        # shader states (they never free: the nodes stay alive, just disabled).
+        # Quantizing the lighting amount snaps furniture onto a tiny shared
+        # palette, so the state table stays small. Mesh vertex-color callers
+        # leave quantize=False since smoothness is baked once per chunk (1 state).
+        if quantize:
+            amount = round(amount / SHADE_QUANTIZE_STEP) * SHADE_QUANTIZE_STEP
+
         k = (base, round(amount, 6), minimum)
 
         v = self._shade_cache.get(k)

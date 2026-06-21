@@ -791,7 +791,7 @@ class DoorMixin(BedMixin, DrawerMixin):
         door_near = list(near_lights) + [(lx, light_y, lz)]
 
         light_val = self.light_system.light_at(pos[0], WALL_H * 0.5, pos[2], door_near)
-        tint = self.light_system.shaded_color(WALL_RGB, light_val)
+        tint = self.light_system.shaded_color(WALL_RGB, light_val, quantize=True)
         entity = Entity(
             position=pos,
             rotation=(0, rotation_y, 0),

@@ -456,7 +456,7 @@ class DrawerMixin:
 
         collider_h = self.drawer_collider_height()
         light_val = self.light_system.light_at(position[0], collider_h * 0.5, position[2], near_lights)
-        tint = self.light_system.shaded_color(DRAWER_LIGHT_RGB, light_val * DRAWER_LIGHT_BOOST, DRAWER_MIN_LIGHT)
+        tint = self.light_system.shaded_color(DRAWER_LIGHT_RGB, light_val * DRAWER_LIGHT_BOOST, DRAWER_MIN_LIGHT, quantize=True)
         entity = Entity(
             position=position,
             rotation=(0, rotation_y, 0),
@@ -545,7 +545,7 @@ class DrawerMixin:
                 rotation_y = 90
 
             light_val = self.light_system.light_at(position[0], position[1], position[2], near_lights)
-            tint = self.light_system.shaded_color(NOTE_LIGHT_RGB, light_val * NOTE_LIGHT_BOOST, NOTE_MIN_LIGHT)
+            tint = self.light_system.shaded_color(NOTE_LIGHT_RGB, light_val * NOTE_LIGHT_BOOST, NOTE_MIN_LIGHT, quantize=True)
             note = Entity(
                 model='quad',
                 texture=texture,
@@ -572,7 +572,7 @@ class DrawerMixin:
         )
         local_pos = drawer_node.getRelativePoint(entity, center)
         light_val = self.light_system.light_at(position[0], center.y, position[2], near_lights)
-        tint = self.light_system.shaded_color(KEY_LIGHT_RGB, light_val * KEY_LIGHT_BOOST, KEY_MIN_LIGHT)
+        tint = self.light_system.shaded_color(KEY_LIGHT_RGB, light_val * KEY_LIGHT_BOOST, KEY_MIN_LIGHT, quantize=True)
 
         key_node = self.key_model.copyTo(drawer_node)
         self.prepare_key_model(key_node)
@@ -624,7 +624,7 @@ class DrawerMixin:
         )
         local_pos = drawer_node.getRelativePoint(entity, center)
         light_val = self.light_system.light_at(position[0], center.y, position[2], near_lights)
-        tint = self.light_system.shaded_color(NOTE_LIGHT_RGB, light_val * NOTE_LIGHT_BOOST, NOTE_MIN_LIGHT)
+        tint = self.light_system.shaded_color(NOTE_LIGHT_RGB, light_val * NOTE_LIGHT_BOOST, NOTE_MIN_LIGHT, quantize=True)
 
         card = CardMaker(f'note_{number}')
         card.setFrame(-NOTE_SIZE * 0.5, NOTE_SIZE * 0.5, -NOTE_SIZE * 0.5, NOTE_SIZE * 0.5)
